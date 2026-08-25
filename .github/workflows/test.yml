@@ -1,0 +1,24 @@
+name: Smoke tests
+
+on:
+  push:
+    branches: [main, hardening-v1.1]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run zero-dependency smoke tests
+        run: npm test

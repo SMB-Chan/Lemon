@@ -1,0 +1,11 @@
+{
+  "name": "lemon-p2p-transfer",
+  "version": "1.1.0",
+  "private": true,
+  "scripts": {
+    "test": "node tests/smoke.cjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
