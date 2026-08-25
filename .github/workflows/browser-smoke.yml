@@ -44,6 +44,8 @@ jobs:
           node -e "if (typeof WebSocket !== 'function') throw new Error('Node WebSocket unavailable')"
       - name: Wait for this commit to reach public Pages
         shell: bash
+        env:
+          LEMON_BUILD_WAIT_ATTEMPTS: '60'
         run: |
           set -euo pipefail
           VERSION="$(node -p "require('./package.json').version")"
