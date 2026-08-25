@@ -3,6 +3,8 @@
 
   const C = window.LemonCore;
   if (!C) throw new Error('LemonCore を読み込めませんでした');
+  const CP = window.LemonConnectionPolicy;
+  if (!CP) throw new Error('LemonConnectionPolicy を読み込めませんでした');
 
   const $ = (s) => document.querySelector(s);
   const myIdEl = $('#my-id');
@@ -115,7 +117,7 @@
   function stopKeepAliveAudio() {
     if (!keepAliveAudio) return;
     try { keepAliveAudio.osc.stop(); } catch (_) {}
-    try { keepAliveAudio.ctx.close(); } catch (_) {}
+    try { keepAliveAudio.ctx.close().catch(() => {}); } catch (_) {}
     keepAliveAudio = null;
   }
 
@@ -243,13 +245,25 @@
     const remoteId = conn.peer;
     const existing = connections.get(remoteId);
     if (existing) {
-      if (outgoing) {
-        toast('既に接続済みです');
-        conn.close();
+      let replace = false;
+      try {
+        replace = CP.shouldReplaceExisting(
+          peer && peer.id,
+          remoteId,
+          !!existing._lemonOutgoing,
+          !!outgoing,
+          !!existing.open
+        );
+      } catch (_) {}
+      if (!replace) {
+        if (outgoing && existing.open) toast('既に接続済みです');
+        try { conn.close(); } catch (_) {}
+        return;
       }
-      return;
+      try { existing.close(); } catch (_) {}
     }
 
+    conn._lemonOutgoing = !!outgoing;
     conn._pendingAccept = new Map();
     conn._sendTail = Promise.resolve();
     conn._incoming = null;
@@ -288,9 +302,11 @@
         }
         conn._incoming = null;
       }
-      connections.delete(remoteId);
-      if (selectedConn === conn) selectConnection(null);
-      renderConnections();
+      if (connections.get(remoteId) === conn) {
+        connections.delete(remoteId);
+        if (selectedConn === conn) selectConnection(null);
+        renderConnections();
+      }
     });
 
     conn.on('error', (err) => {

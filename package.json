@@ -1,9 +1,9 @@
 {
   "name": "lemon-p2p-transfer",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "private": true,
   "scripts": {
-    "test": "node tests/smoke.cjs && node tests/auth-guard-smoke.cjs"
+    "test": "node tests/smoke.cjs && node tests/auth-guard-smoke.cjs && node tests/stability-smoke.cjs"
   },
   "engines": {
     "node": ">=18"
