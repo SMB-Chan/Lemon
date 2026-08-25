@@ -15,7 +15,7 @@ concurrency:
 jobs:
   chrome:
     runs-on: ubuntu-latest
-    timeout-minutes: 11
+    timeout-minutes: 13
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -51,7 +51,7 @@ jobs:
           VERSION="$(node -p "require('./package.json').version")"
           node tests/live-pages.mjs "$LEMON_URL" "$GITHUB_SHA" "$VERSION"
       - name: Run authenticated transfer boundary smoke
-        run: node tests/live-browser-smoke.mjs "$LEMON_URL"
+        run: node tests/run-browser-smoke.mjs tests/live-browser-smoke.mjs "$LEMON_URL"
       - name: Run wrong-secret and ZIP smoke
         run: node tests/live-auth-zip-smoke.mjs "$LEMON_URL"
       - name: Run direct-save flow-control smoke
