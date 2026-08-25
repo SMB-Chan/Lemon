@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const C = require('../core.js');
+const Pair = require('../pairing-core.js');
 
 function rejects(fn, pattern) {
   assert.throws(fn, pattern);
@@ -54,10 +55,21 @@ const fake = (size) => ({ file: { size } });
 assert.deepEqual(C.partitionEntries([fake(6), fake(6), fake(2)], 10).map((p) => p.length), [1, 2]);
 assert.deepEqual(C.partitionEntries([fake(20), fake(1)], 10).map((p) => p.length), [1, 1]);
 
-// Browser application must at least parse as JavaScript without executing DOM code.
-const appPath = path.join(__dirname, '..', 'app.js');
-const appSource = fs.readFileSync(appPath, 'utf8');
+// Pairing core basics are available to both browser and Node tests.
+const fixedSecret = Pair.toBase64Url(new Uint8Array(16));
+assert.equal(Pair.parseShareCode(Pair.formatShareCode('drop-test', fixedSecret)).paired, true);
+
+// Browser scripts must at least parse as JavaScript without executing DOM code.
+const appSource = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+const pairingSource = fs.readFileSync(path.join(__dirname, '..', 'pairing.js'), 'utf8');
+const pairingCoreSource = fs.readFileSync(path.join(__dirname, '..', 'pairing-core.js'), 'utf8');
 assert.doesNotThrow(() => new Function(appSource));
+assert.doesNotThrow(() => new Function(pairingSource));
+assert.doesNotThrow(() => new Function(pairingCoreSource));
+assert.ok(pairingSource.includes("'#peer=' + encodeURIComponent(token)"), 'new pairing URLs must place the secret in the fragment');
+assert.ok(pairingSource.includes('channelBindingFromSdps'), 'pairing must bind HMAC proof to DTLS fingerprints');
+assert.ok(pairingSource.includes('AUTH_VERSION = 2'), 'unexpected pairing protocol version');
+assert.ok(!/metadata\s*:\s*[^,}]*secret/i.test(pairingSource), 'pairing secret must not be placed in PeerJS metadata');
 
 // Entry point dependency order and supply-chain policy.
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
@@ -65,12 +77,18 @@ const peerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.
 const qrUrl = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
 const peerSri = 'sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==';
 const qrSri = 'sha512-ZDSPMa/JM1D+7kdg2x3BsruQ6T/JpJo3jWDWkCZsP+5yVyp1KfESqLI+7RqB5k24F7p2cV7i2YHh/890y6P6Sw==';
-const styleAt = html.indexOf('./styles.css');
+const styleAt = html.indexOf('href="./styles.css"');
 const peerAt = html.indexOf(peerUrl);
 const qrAt = html.indexOf(qrUrl);
-const coreAt = html.indexOf('core.js');
-const appAt = html.indexOf('app.js');
-assert.ok(styleAt >= 0 && peerAt > styleAt && qrAt > peerAt && coreAt > qrAt && appAt > coreAt, 'resource loading order is invalid');
+const pairingCoreAt = html.indexOf('src="./pairing-core.js"');
+const pairingAt = html.indexOf('src="./pairing.js"');
+const coreAt = html.indexOf('src="./core.js"');
+const appAt = html.indexOf('src="./app.js"');
+assert.ok(
+  styleAt >= 0 && peerAt > styleAt && qrAt > peerAt && pairingCoreAt > qrAt
+  && pairingAt > pairingCoreAt && coreAt > pairingAt && appAt > coreAt,
+  'resource loading order is invalid'
+);
 assert.ok(html.includes(`integrity="${peerSri}"`), 'PeerJS SRI is missing or changed');
 assert.ok(html.includes(`integrity="${qrSri}"`), 'QR SRI is missing or changed');
 assert.ok(!html.includes('unpkg.com'), 'unpkg must not be part of the runtime trust surface');
