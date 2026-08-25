@@ -12,10 +12,14 @@ assert.match(runner, /const MAX_ATTEMPTS = 3;/, 'browser retry attempts changed 
 assert.match(runner, /authenticated connection timed out/i, 'retry boundary must remain connection-bootstrap timeout only');
 assert.match(runner, /outside the retryable connection-bootstrap boundary; not retrying/, 'non-retryable failures must fail immediately');
 assert.match(runner, /combined\.length > 128 \* 1024/, 'retry runner must bound captured output');
-assert.doesNotMatch(runner, /RETRYABLE\s*=\s*\/.+(?:SHA|CRC|abort|integrity|payload|transfer)/i,
-  'retry predicate must not include transfer/integrity failures');
+assert.doesNotMatch(runner, /RETRYABLE\s*=\s*\/.+(?:SHA|CRC|abort|integrity|payload|transfer|protocol)/i,
+  'retry predicate must not include transfer/integrity/protocol failures');
 
-for (const script of ['tests/live-direct-save-smoke.mjs', 'tests/live-direct-interrupt-smoke.mjs']) {
+for (const script of [
+  'tests/live-direct-save-smoke.mjs',
+  'tests/live-direct-interrupt-smoke.mjs',
+  'tests/live-protocol-failure-smoke.mjs',
+]) {
   const escaped = script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   assert.match(workflow, new RegExp(`node tests/run-browser-smoke\\.mjs ${escaped}`),
     `production workflow must use scoped retry runner for ${script}`);
