@@ -56,7 +56,11 @@ for (const token of [
 }
 
 // Every third-party GitHub Action must be pinned to an immutable 40-hex commit.
-for (const workflow of ['.github/workflows/test.yml', '.github/workflows/jekyll-gh-pages.yml']) {
+for (const workflow of [
+  '.github/workflows/test.yml',
+  '.github/workflows/jekyll-gh-pages.yml',
+  '.github/workflows/browser-smoke.yml',
+]) {
   const source = read(workflow);
   const usesLines = source.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith('uses:'));
   assert.ok(usesLines.length > 0, `${workflow} contains no action references`);
@@ -77,6 +81,18 @@ assert.ok(pagesWorkflow.includes("'_site/build-info.json'"), 'Pages build must g
 assert.ok(pagesWorkflow.includes('Verify live deployed site'), 'Pages deploy must verify the public site after deployment');
 assert.ok(pagesWorkflow.includes('steps.deployment.outputs.page_url'), 'live verification must use the actual deployment URL');
 assert.ok(pagesWorkflow.includes('tests/live-pages.mjs'), 'Pages deploy must run the live integrity smoke');
+
+const browserWorkflow = read('.github/workflows/browser-smoke.yml');
+for (const token of [
+  'Production browser smoke',
+  'CHROME_BIN',
+  'Wait for this commit to reach public Pages',
+  'tests/live-pages.mjs',
+  'tests/live-browser-smoke.mjs',
+]) {
+  assert.ok(browserWorkflow.includes(token), `production browser smoke invariant missing: ${token}`);
+}
+assert.doesNotMatch(browserWorkflow, /npm\s+(?:install|i|ci)\b/i, 'production browser smoke must remain zero-dependency');
 
 // The Pages artifact is an explicit, unique set of runtime files only.
 const manifest = read('pages-files.txt').split(/\r?\n/)
@@ -115,8 +131,22 @@ for (const token of [
   assert.ok(liveSmoke.includes(token), `live Pages verification invariant missing: ${token}`);
 }
 
+const browserSmoke = read('tests/live-browser-smoke.mjs');
+for (const token of [
+  '--remote-debugging-port=',
+  'window.__p2p.sendEntries',
+  "crypto.subtle.digest('SHA-256'",
+  'pairing UI did not normalize the authenticated invite',
+  'received Blob SHA-256 differs from sender payload',
+  "document.querySelector('#peer-input')",
+]) {
+  assert.ok(browserSmoke.includes(token), `live browser verification invariant missing: ${token}`);
+}
+assert.doesNotMatch(browserSmoke, /console\.log\([^\n]*invite/i, 'browser smoke must not log authenticated invites');
+
 const pkg = JSON.parse(read('package.json'));
-assert.equal(pkg.version, '1.3.2', 'stabilization release version must be 1.3.2');
-assert.match(pkg.scripts.test, /node --check tests\/live-pages\.mjs/, 'normal CI must syntax-check the live smoke script');
+assert.equal(pkg.version, '1.3.3', 'stabilization release version must be 1.3.3');
+assert.match(pkg.scripts.test, /node --check tests\/live-pages\.mjs/, 'normal CI must syntax-check the live Pages smoke script');
+assert.match(pkg.scripts.test, /node --check tests\/live-browser-smoke\.mjs/, 'normal CI must syntax-check the live browser smoke script');
 
 console.log('Lemon stability/security tests passed');
