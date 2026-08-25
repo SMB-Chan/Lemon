@@ -12,6 +12,7 @@
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha512-ZDSPMa/JM1D+7kdg2x3BsruQ6T/JpJo3jWDWkCZsP+5yVyp1KfESqLI+7RqB5k24F7p2cV7i2YHh/890y6P6Sw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script defer src="./auth.js"></script>
 <script defer src="./core.js"></script>
+<script defer src="./capabilities.js"></script>
 <script defer src="./diagnostics.js"></script>
 <script defer src="./pairing-ui.js"></script>
 <script defer src="./app.js"></script>
@@ -55,7 +56,7 @@
     <input type="file" id="file-input" multiple hidden>
     <input type="file" id="folder-input" webkitdirectory multiple hidden>
     <p id="send-target">送信先: まだ接続なし</p>
-    <p class="security-note">認証済みのDataChannelだけを転送層へ渡します。同じ相手への送信は順番待ちになり、受信完了時にはサイズとCRC32も検証します。</p>
+    <p class="security-note">認証済みのDataChannelだけを転送層へ渡します。対応ブラウザ同士では受信時に「直接保存」を選べ、Blobへ全量を蓄積せずディスクへ順次書き込めます。</p>
   </section>
 
   <section class="card">
