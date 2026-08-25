@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const C = require('../core.js');
 const A = require('../auth.js');
+const P = require('../capabilities.js');
 
 function rejects(fn, pattern) {
   assert.throws(fn, pattern);
@@ -104,8 +105,22 @@ assert.notEqual(responderTranscript, initiatorTranscript);
 assert.ok(responderTranscript.startsWith('lemon-auth/v1\nresponder\n'));
 assert.ok(initiatorTranscript.startsWith('lemon-auth/v1\ninitiator\n'));
 
+// Capability negotiation has bounded, canonical feature names.
+assert.deepEqual(P.normalizeFeatures(['flow-control-v1', 'direct-save-v1', 'flow-control-v1', 'BAD FEATURE', '', 3]), [
+  'direct-save-v1',
+  'flow-control-v1',
+]);
+assert.deepEqual(P.normalizeFeatures(new Array(33).fill('x')), []);
+assert.equal(P.supportsDirectSave({ isSecureContext: true, showSaveFilePicker() {} }), true);
+assert.equal(P.supportsDirectSave({ isSecureContext: false, showSaveFilePicker() {} }), false);
+assert.equal(P.supportsDirectSave({ isSecureContext: true }), false);
+assert.ok(P.localFeatures({ isSecureContext: true, showSaveFilePicker() {} }).includes(P.FEATURE_FLOW));
+assert.ok(P.localFeatures({ isSecureContext: true, showSaveFilePicker() {} }).includes(P.FEATURE_DIRECT));
+assert.deepEqual(P.localFeatures({ isSecureContext: true }), [P.FEATURE_FLOW]);
+assert.ok(P.FLOW_LOW < P.FLOW_HIGH);
+
 // Browser modules must at least parse as JavaScript without executing DOM code.
-for (const file of ['auth.js', 'diagnostics.js', 'pairing-ui.js', 'app.js']) {
+for (const file of ['auth.js', 'capabilities.js', 'diagnostics.js', 'pairing-ui.js', 'app.js']) {
   const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
   assert.doesNotThrow(() => new Function(source), `${file} has a syntax error`);
 }
@@ -144,12 +159,13 @@ const peerAt = html.indexOf(peerDep.url);
 const qrAt = html.indexOf(qrDep.url);
 const authAt = html.indexOf('auth.js');
 const coreAt = html.indexOf('core.js');
+const capAt = html.indexOf('capabilities.js');
 const diagAt = html.indexOf('diagnostics.js');
 const pairingAt = html.indexOf('pairing-ui.js');
 const appAt = html.indexOf('app.js');
 assert.ok(
   styleAt >= 0 && peerAt > styleAt && qrAt > peerAt && authAt > qrAt && coreAt > authAt &&
-  diagAt > coreAt && pairingAt > diagAt && appAt > pairingAt,
+  capAt > coreAt && diagAt > capAt && pairingAt > diagAt && appAt > pairingAt,
   'resource loading order is invalid'
 );
 assert.ok(html.includes('id="diag-refresh"'), 'diagnostics refresh control is missing');
@@ -197,6 +213,12 @@ for (const token of ['HMAC', 'SHA-256', 'lemon-auth-challenge', 'lemon-auth-resp
 }
 assert.ok(!authSource.includes('console.log'), 'authentication code must not log pairing material');
 
+const capabilitySource = fs.readFileSync(path.join(__dirname, '..', 'capabilities.js'), 'utf8');
+for (const token of ['lemon-capabilities', 'lemon-flow', 'showSaveFilePicker', 'createWritable', 'direct-save-v1', 'flow-control-v1', 'bufferedAmount']) {
+  assert.ok(capabilitySource.includes(token), `capability/direct-save coverage missing: ${token}`);
+}
+assert.ok(!capabilitySource.includes('console.log'), 'capability code must not log transfer or pairing material');
+
 const pairingSource = fs.readFileSync(path.join(__dirname, '..', 'pairing-ui.js'), 'utf8');
 assert.ok(pairingSource.includes('history.replaceState'), 'pairing URL must be scrubbed after capture');
 assert.ok(pairingSource.includes('makePairingUrl'), 'pairing UI must generate fragment-based URLs');
@@ -210,4 +232,44 @@ const css = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
 assert.ok(css.includes(':root'), 'styles.css appears incomplete');
 assert.ok(css.includes('.diag-peer'), 'diagnostics styles are missing');
 
-console.log('Lemon smoke tests passed');
+async function testDirectSink() {
+  const writes = [];
+  let pauses = 0;
+  let resumes = 0;
+  let closes = 0;
+  let aborts = 0;
+  const writable = {
+    async write(buffer) {
+      writes.push(Buffer.from(new Uint8Array(buffer)).toString('hex'));
+    },
+    async close() { closes++; },
+    async abort() { aborts++; },
+  };
+  const sink = P.createDirectSink(writable, {
+    highWaterMark: 4,
+    lowWaterMark: 1,
+    onPause: () => { pauses++; },
+    onResume: () => { resumes++; },
+  });
+  sink.write(Uint8Array.from([1, 2, 3, 4]).buffer);
+  assert.equal(sink.paused, true, 'sink must pause at the high watermark');
+  await sink.drain();
+  assert.deepEqual(writes, ['01020304']);
+  assert.equal(pauses, 1);
+  assert.equal(resumes, 1);
+  assert.equal(sink.queuedBytes, 0);
+  await sink.commit();
+  assert.equal(closes, 1);
+  assert.equal(aborts, 0);
+
+  const aborted = P.createDirectSink(writable, { highWaterMark: 4, lowWaterMark: 1 });
+  await aborted.abort();
+  assert.equal(aborts, 1);
+}
+
+testDirectSink().then(() => {
+  console.log('Lemon smoke tests passed');
+}).catch((err) => {
+  console.error(err);
+  process.exitCode = 1;
+});
