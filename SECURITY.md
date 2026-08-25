@@ -9,10 +9,13 @@ Lemon is a browser-based peer-to-peer file transfer tool. This document describe
 - The pairing secret is proved mutually with HMAC-SHA-256; the raw secret is not sent through the DataChannel.
 - HMAC transcripts are bound to the DTLS fingerprints from both endpoint SDP descriptions, so a signaling intermediary cannot simply relay a valid proof across two different DTLS sessions.
 - Application `open`, `send` and `data` are gated until pairing authentication completes. Transfer metadata or binary payload received before authentication is not exposed to the transfer layer.
+- Authenticated peers exchange a bounded capability list before optional transport extensions are used.
 - Lemon validates file metadata, declared sizes, group counts and end-of-transfer state before marking a transfer complete.
 - Each transferred file is checked with CRC32 to detect transfer corruption or protocol state drift.
 - ZIP entry paths reject parent traversal, absolute paths, drive-absolute paths, NULs and control characters.
 - Sender ZIP creation is single-pass and the generated archive structure is checked in the test suite.
+- On supporting browsers, direct-to-disk receiving uses a user-selected `FileSystemWritableFileStream` instead of retaining the whole file in a Blob.
+- Direct-to-disk writes use application-level pause/resume flow control with bounded local write backlog.
 - Remote JavaScript dependencies are version-pinned and protected by Subresource Integrity (SRI).
 - A Content Security Policy restricts script, style, object, frame and network sources.
 - External scripts are loaded without a referrer and with anonymous CORS.
@@ -28,7 +31,7 @@ The authentication exchange is deliberately separated from the file-transfer fra
 2. The responder generates a fresh 128-bit nonce and sends an HMAC-SHA-256 challenge proof.
 3. The initiator verifies the responder proof and returns a role-separated HMAC proof.
 4. The responder verifies it and returns an authentication-complete message.
-5. Only then does Lemon expose the connection to `app.js` and the transfer protocol.
+5. Only then does Lemon expose the connection to the capability and transfer layers.
 
 Both proofs include the responder Peer ID, initiator Peer ID, nonce, role and a deterministic channel binding derived from the DTLS fingerprints present in the local and remote SDP. Authentication fails closed when the required DTLS fingerprints cannot be obtained.
 
@@ -40,11 +43,38 @@ For HTTP/HTTPS pages, Lemon puts the authenticated connection code in the URL **
 
 This does not protect the secret from the browser itself, browser extensions, screenshots, clipboard history, QR scanners, or anyone to whom the code is intentionally forwarded.
 
+## Capability negotiation and direct-to-disk receiving
+
+After authentication, `capabilities.js` sends a small `lemon-capabilities` control message. Feature names are length-limited, syntax-checked, deduplicated and capped in count before being accepted. Unknown features are ignored.
+
+The current optional features are:
+
+- `flow-control-v1` — allows the receiving side to pause/resume the sender when its disk-write backlog crosses configured watermarks.
+- `direct-save-v1` — indicates support for the direct-save extension.
+
+The normal Blob-based receive path remains the compatibility fallback. Direct save is shown only when the local browser exposes `showSaveFilePicker()` in a secure context and the authenticated remote advertises the required extension support.
+
+Direct save is deliberately user initiated. The save picker is opened only from the explicit **直接保存** button; Lemon does not attempt to silently acquire a filesystem handle.
+
+When direct save is selected:
+
+1. the user chooses the destination file;
+2. Lemon opens a writable stream before accepting the transfer;
+3. incoming chunks are CRC32-checked and queued to that stream in order;
+4. when queued-but-not-yet-written data reaches the high watermark, Lemon sends `lemon-flow paused=true`;
+5. the sender's existing DataChannel backpressure path is held until the backlog falls below the low watermark;
+6. the receiver waits for all queued writes, validates final byte count and CRC32, and only then closes the writable stream;
+7. on mismatch, write failure, or disconnect, Lemon aborts the writable stream and closes the affected connection.
+
+The File System Access implementation used by supporting browsers normally stages changes and exposes them to the selected file when the writable stream is closed. Lemon relies on `abort()` for best-effort discard on verification failure, but exact crash/recovery behavior remains browser and operating-system dependent.
+
+Direct save currently applies to standalone transfer objects, including sender-created ZIP files. When ZIP bundling is disabled, a folder is still handled by the existing per-file Blob receive path. Split ZIP parts can each be direct-saved; because each part is a separate destination file, the user selects a destination for each part.
+
 ## Runtime trust boundary
 
 The browser executes these code sources:
 
-1. Lemon's own `index.html`, `auth.js`, `pairing-ui.js`, `app.js`, `core.js`, `diagnostics.js` and `styles.css`.
+1. Lemon's own `index.html`, `auth.js`, `capabilities.js`, `pairing-ui.js`, `app.js`, `core.js`, `diagnostics.js` and `styles.css`.
 2. PeerJS 1.5.5 from cdnjs, accepted only when its SHA-512 SRI digest matches.
 3. qrcode-generator 1.4.4 from cdnjs, accepted only when its SHA-512 SRI digest matches.
 
@@ -76,9 +106,15 @@ Lemon cannot protect files or pairing material from a compromised browser, malic
 
 The public PeerJS signaling service remains an availability and rendezvous-metadata dependency. Lemon does not claim anonymity from the signaling infrastructure or network observers. DTLS-fingerprint-bound HMAC prevents simple proof relaying across different DTLS sessions, but it does not turn the public signaling service into an anonymous transport.
 
-### Large-file memory use
+### Direct save does not make all browsers equivalent
 
-The current receive path holds received chunks in memory until a Blob is made available for saving. Split ZIP transfers bound some workloads, but a single very large file may still require substantial memory. Direct-to-disk receiving is a separate planned milestone.
+`showSaveFilePicker()` is not universally available. Browsers without that API, insecure contexts, and unsupported deployment modes continue to use the Blob-based path. A single large Blob-based transfer can still require memory proportional to the file size.
+
+Flow control bounds Lemon's own queued write backlog, but it does not promise a mathematically exact process-wide memory ceiling: the browser, WebRTC stack, filesystem implementation, operating system and storage device may buffer additional data internally.
+
+### Availability attacks by authenticated peers
+
+An authenticated peer can reject transfers, stop sending, disconnect, or hold a flow-control pause. Lemon treats these as availability failures rather than identity failures. Pairing authentication does not force a peer to complete a transfer.
 
 ## Content Security Policy
 
@@ -107,4 +143,4 @@ CI intentionally fails when an unexpected remote script is added or a pinned SRI
 
 ## Reporting a vulnerability
 
-Please report security-sensitive issues privately to the repository owner rather than publishing exploit details before a fix is available. Include the browser/OS, reproduction steps, affected transfer mode, whether the complete pairing code was known, and whether the issue requires control of signaling or an endpoint.
+Please report security-sensitive issues privately to the repository owner rather than publishing exploit details before a fix is available. Include the browser/OS, reproduction steps, affected transfer mode, whether the complete pairing code was known, whether direct save was used, and whether the issue requires control of signaling or an endpoint.
