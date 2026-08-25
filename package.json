@@ -1,6 +1,6 @@
 {
   "name": "lemon-p2p-transfer",
-  "version": "1.3.6",
+  "version": "1.3.7",
   "private": true,
   "scripts": {
     "test": "node tests/smoke.cjs && node tests/auth-guard-smoke.cjs && node tests/stability-smoke.cjs && node --check tests/live-pages.mjs && node --check tests/live-browser-smoke.mjs && node --check tests/live-auth-zip-smoke.mjs && node --check tests/live-direct-save-smoke.mjs"
