@@ -110,15 +110,38 @@ for (const file of ['auth.js', 'diagnostics.js', 'pairing-ui.js', 'app.js']) {
   assert.doesNotThrow(() => new Function(source), `${file} has a syntax error`);
 }
 
-// Entry point dependency order and supply-chain policy.
+// Entry point dependency order and machine-verifiable supply-chain policy.
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-const peerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js';
-const qrUrl = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
-const peerSri = 'sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==';
-const qrSri = 'sha512-ZDSPMa/JM1D+7kdg2x3BsruQ6T/JpJo3jWDWkCZsP+5yVyp1KfESqLI+7RqB5k24F7p2cV7i2YHh/890y6P6Sw==';
+const lock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'third-party-lock.json'), 'utf8'));
+assert.equal(lock.schema, 1, 'unsupported third-party lock schema');
+assert.equal(lock.policy.runtimeScriptOrigin, 'https://cdnjs.cloudflare.com');
+assert.equal(lock.policy.requireExactVersion, true, 'dependency versions must remain exact');
+assert.equal(lock.policy.requireSri, 'sha512', 'runtime dependencies must remain SHA-512 pinned');
+assert.equal(lock.policy.allowRemoteScripts, 2, 'unexpected remote-script allowance');
+assert.equal(lock.dependencies.length, lock.policy.allowRemoteScripts, 'lock dependency count mismatch');
+
+const dependencyNames = new Set();
+for (const dep of lock.dependencies) {
+  assert.equal(typeof dep.name, 'string');
+  assert.ok(dep.name && !dependencyNames.has(dep.name), `duplicate dependency: ${dep.name}`);
+  dependencyNames.add(dep.name);
+  assert.match(dep.version, /^\d+\.\d+\.\d+$/, `${dep.name} must use an exact semver`);
+  assert.ok(dep.url.startsWith(lock.policy.runtimeScriptOrigin + '/'), `${dep.name} escaped the pinned CDN origin`);
+  assert.ok(dep.url.includes(`/${dep.version}/`), `${dep.name} URL does not contain its exact version`);
+  assert.match(dep.integrity, /^sha512-[A-Za-z0-9+/]+={0,2}$/, `${dep.name} SRI is not SHA-512`);
+  assert.equal(dep.license, 'MIT', `${dep.name} license changed; review notices explicitly`);
+  assert.match(dep.upstream, /^https:\/\/github\.com\//, `${dep.name} upstream must be reviewable`);
+  assert.ok(html.includes(`src="${dep.url}"`), `${dep.name} runtime URL diverged from lock`);
+  assert.ok(html.includes(`integrity="${dep.integrity}"`), `${dep.name} runtime SRI diverged from lock`);
+}
+
+const peerDep = lock.dependencies.find((d) => d.name === 'peerjs');
+const qrDep = lock.dependencies.find((d) => d.name === 'qrcode-generator');
+assert.ok(peerDep && qrDep, 'required runtime dependencies are missing from lock');
+
 const styleAt = html.indexOf('./styles.css');
-const peerAt = html.indexOf(peerUrl);
-const qrAt = html.indexOf(qrUrl);
+const peerAt = html.indexOf(peerDep.url);
+const qrAt = html.indexOf(qrDep.url);
 const authAt = html.indexOf('auth.js');
 const coreAt = html.indexOf('core.js');
 const diagAt = html.indexOf('diagnostics.js');
@@ -131,8 +154,6 @@ assert.ok(
 );
 assert.ok(html.includes('id="diag-refresh"'), 'diagnostics refresh control is missing');
 assert.ok(html.includes('id="diag-output"'), 'diagnostics output container is missing');
-assert.ok(html.includes(`integrity="${peerSri}"`), 'PeerJS SRI is missing or changed');
-assert.ok(html.includes(`integrity="${qrSri}"`), 'QR SRI is missing or changed');
 assert.ok(!html.includes('unpkg.com'), 'unpkg must not be part of the runtime trust surface');
 assert.ok(!/<style(?:\s|>)/i.test(html), 'inline style blocks are forbidden by CSP');
 
@@ -143,7 +164,7 @@ for (const required of [
   "default-src 'self'",
   "base-uri 'none'",
   "object-src 'none'",
-  "script-src 'self' https://cdnjs.cloudflare.com",
+  `script-src 'self' ${lock.policy.runtimeScriptOrigin}`,
   "style-src 'self'",
   "connect-src 'self' https://0.peerjs.com wss://0.peerjs.com",
 ]) {
@@ -152,13 +173,22 @@ for (const required of [
 assert.ok(!csp.includes("'unsafe-inline'"), 'CSP must not allow unsafe-inline');
 assert.ok(!csp.includes("'unsafe-eval'"), 'CSP must not allow unsafe-eval');
 
-// Every remote script must be pinned with SRI, anonymous CORS and no referrer.
-const remoteScripts = [...html.matchAll(/<script\b([^>]*\bsrc="https:\/\/[^\"]+"[^>]*)><\/script>/gi)];
-assert.equal(remoteScripts.length, 2, 'unexpected number of remote scripts');
-for (const [, attrs] of remoteScripts) {
-  assert.match(attrs, /\bintegrity="sha512-[^"]+"/i);
+// Every remote script must be exactly represented in the dependency lock.
+const remoteScripts = [...html.matchAll(/<script\b([^>]*\bsrc="(https:\/\/[^\"]+)"[^>]*)><\/script>/gi)];
+assert.equal(remoteScripts.length, lock.policy.allowRemoteScripts, 'unexpected number of remote scripts');
+for (const [, attrs, src] of remoteScripts) {
+  const dep = lock.dependencies.find((item) => item.url === src);
+  assert.ok(dep, `remote script is not locked: ${src}`);
+  assert.ok(attrs.includes(`integrity="${dep.integrity}"`), `runtime SRI mismatch: ${dep.name}`);
   assert.match(attrs, /\bcrossorigin="anonymous"/i);
   assert.match(attrs, /\breferrerpolicy="no-referrer"/i);
+}
+
+const notices = fs.readFileSync(path.join(__dirname, '..', 'THIRD_PARTY_NOTICES.md'), 'utf8');
+assert.ok(notices.includes('third-party-lock.json'), 'third-party notice must point to the canonical lock');
+for (const dep of lock.dependencies) {
+  assert.ok(notices.includes(dep.url), `${dep.name} URL missing from notices`);
+  assert.ok(notices.includes(dep.integrity), `${dep.name} SRI missing from notices`);
 }
 
 const authSource = fs.readFileSync(path.join(__dirname, '..', 'auth.js'), 'utf8');
