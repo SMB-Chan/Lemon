@@ -6,8 +6,9 @@
   if (!Pair || !OriginalPeer) throw new Error('Pairing dependencies could not be loaded');
 
   const AUTH_MARK = '__lemonPair';
-  const AUTH_VERSION = 1;
+  const AUTH_VERSION = 2;
   const AUTH_TIMEOUT_MS = 10000;
+  let initialPairToken = null;
 
   function emitTo(listeners, event, value) {
     const set = listeners.get(event);
@@ -15,6 +16,13 @@
     for (const fn of [...set]) {
       try { fn(value); } catch (err) { setTimeout(() => { throw err; }, 0); }
     }
+  }
+
+  function connectionBinding(raw) {
+    const pc = raw && raw.peerConnection;
+    const localSdp = pc && pc.localDescription && pc.localDescription.sdp;
+    const remoteSdp = pc && pc.remoteDescription && pc.remoteDescription.sdp;
+    return Pair.channelBindingFromSdps(localSdp, remoteSdp);
   }
 
   function wrapConnection(raw, context) {
@@ -25,6 +33,7 @@
     let state = context.outgoing ? 'await-open' : 'await-hello';
     let nonceA = null;
     let nonceB = null;
+    let channelBinding = null;
     let dataTail = Promise.resolve();
     let proxy = null;
 
@@ -72,6 +81,10 @@
         fail('認証前のデータを受信したため接続を拒否しました');
         return;
       }
+      if (!channelBinding) {
+        fail('WebRTCチャネルの証明書fingerprintを確認できません');
+        return;
+      }
 
       if (context.outgoing) {
         if (state === 'await-challenge' && data.t === 'challenge') {
@@ -86,7 +99,8 @@
             raw.peer,
             nonceA,
             nonceB,
-            'responder'
+            'responder',
+            channelBinding
           );
           if (!Pair.secureEqual(expected, data.proof)) {
             fail('相手のペアリング証明が一致しません');
@@ -98,7 +112,8 @@
             raw.peer,
             nonceA,
             nonceB,
-            'initiator'
+            'initiator',
+            channelBinding
           );
           state = 'await-ok';
           sendPair({ t: 'response', nonceA, nonceB, proof });
@@ -131,7 +146,8 @@
           context.localPeerId,
           nonceA,
           nonceB,
-          'responder'
+          'responder',
+          channelBinding
         );
         state = 'await-response';
         sendPair({ t: 'challenge', nonceA, nonceB, proof });
@@ -149,7 +165,8 @@
           context.localPeerId,
           nonceA,
           nonceB,
-          'initiator'
+          'initiator',
+          channelBinding
         );
         if (!Pair.secureEqual(expected, data.proof)) {
           fail('接続元のペアリング証明が一致しません');
@@ -165,6 +182,12 @@
 
     raw.on('open', () => {
       startTimer();
+      try {
+        channelBinding = connectionBinding(raw);
+      } catch (err) {
+        fail(err.message || 'DTLS fingerprintを取得できません');
+        return;
+      }
       if (!context.outgoing) return;
       if (!context.remoteSecret) {
         fail('秘密付きペアリングコードが必要です');
@@ -250,7 +273,7 @@
     canvas.hidden = false;
     if (hint) {
       hint.textContent = location.protocol === 'http:' || location.protocol === 'https:'
-        ? '秘密付きQRです。URLフラグメントを使うためpairing secretはWebサーバーへ送信されません'
+        ? '秘密付きQRです。pairing secretはURLフラグメントに入り、Webサーバーへは送信されません'
         : '秘密付きペアリングコードをQR化しています。相手側でコードとして入力してください';
     }
   }
@@ -263,6 +286,26 @@
     if (input) input.placeholder = '相手の秘密付きペアリングコードを入力';
     drawPairingQr(token);
   }
+
+  function captureInitialPairToken() {
+    try {
+      const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
+      const fromHash = hash.get('peer');
+      if (fromHash && Pair.parseShareCode(fromHash).paired) initialPairToken = fromHash;
+
+      const query = new URLSearchParams(location.search);
+      const fromQuery = query.get('peer');
+      if (!initialPairToken && fromQuery && Pair.parseShareCode(fromQuery).paired) initialPairToken = fromQuery;
+
+      if (fromQuery) query.delete('peer');
+      if (fromHash || fromQuery) {
+        const queryText = query.toString();
+        history.replaceState(null, '', location.pathname + (queryText ? '?' + queryText : ''));
+      }
+    } catch (_) {}
+  }
+
+  captureInitialPairToken();
 
   function LemonPeer() {
     const args = Array.from(arguments);
@@ -304,6 +347,10 @@
           return (rawTarget, options) => {
             const parsed = Pair.parseShareCode(rawTarget);
             const peerId = parsed.peerId;
+            if (parsed.malformed || !Pair.validPeerId(peerId)) {
+              throw new Error('秘密付きペアリングコードの形式が不正です');
+            }
+            if (peerId === target.id) throw new Error('自分自身には接続できません');
             if (parsed.secret) remoteSecrets.set(peerId, parsed.secret);
             const remoteSecret = parsed.secret || remoteSecrets.get(peerId) || null;
             const rawConn = target.connect(peerId, options);
@@ -331,16 +378,12 @@
   window.Peer = LemonPeer;
 
   document.addEventListener('DOMContentLoaded', () => {
-    const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
-    const token = hash.get('peer');
-    if (!token) return;
+    if (!initialPairToken) return;
     const input = document.querySelector('#peer-input');
     const button = document.querySelector('#connect-btn');
     if (!input || !button) return;
-    input.value = token;
-    try {
-      history.replaceState(null, '', location.pathname + location.search);
-    } catch (_) {}
+    input.value = initialPairToken;
     button.click();
+    initialPairToken = null;
   }, { once: true });
 })();
