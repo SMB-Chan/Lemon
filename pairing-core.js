@@ -8,6 +8,7 @@
   const SECRET_BYTES = 16;
   const NONCE_BYTES = 16;
   const SECRET_RE = /^[A-Za-z0-9_-]{22}$/;
+  const NONCE_RE = /^[A-Za-z0-9_-]{22}$/;
   const PEER_ID_RE = /^[A-Za-z0-9](?:[A-Za-z0-9_-]{0,126}[A-Za-z0-9])?$/;
 
   function cryptoApi() {
@@ -76,17 +77,47 @@
     return { peerId, secret: malformed ? null : secret, paired: !malformed, malformed };
   }
 
-  function proofMessage(initiatorId, responderId, nonceA, nonceB, role) {
-    return ['lemon-pair-v1', initiatorId, responderId, nonceA, nonceB, role].join('|');
+  function fingerprintsFromSdp(sdp) {
+    const out = new Set();
+    const text = String(sdp || '');
+    for (const line of text.split(/\r?\n/)) {
+      const match = line.trim().match(/^a=fingerprint:([^\s]+)\s+([0-9A-Fa-f:]+)$/);
+      if (!match) continue;
+      const algorithm = match[1].toLowerCase();
+      const value = match[2].toUpperCase();
+      out.add(algorithm + ' ' + value);
+    }
+    return [...out].sort();
   }
 
-  async function makeProof(secret, initiatorId, responderId, nonceA, nonceB, role) {
+  function channelBindingFromSdps(localSdp, remoteSdp) {
+    const local = fingerprintsFromSdp(localSdp);
+    const remote = fingerprintsFromSdp(remoteSdp);
+    if (!local.length || !remote.length) throw new Error('DTLS fingerprint を取得できません');
+    const endpoints = [local.join(','), remote.join(',')].sort();
+    return endpoints[0] + '||' + endpoints[1];
+  }
+
+  function proofMessage(initiatorId, responderId, nonceA, nonceB, role, channelBinding) {
+    return JSON.stringify([
+      'lemon-pair-v2',
+      initiatorId,
+      responderId,
+      nonceA,
+      nonceB,
+      role,
+      channelBinding,
+    ]);
+  }
+
+  async function makeProof(secret, initiatorId, responderId, nonceA, nonceB, role, channelBinding) {
     if (!SECRET_RE.test(String(secret))) throw new Error('pairing secret が不正です');
     if (!validPeerId(initiatorId) || !validPeerId(responderId)) throw new Error('Peer ID が不正です');
-    if (!/^[A-Za-z0-9_-]{22}$/.test(String(nonceA)) || !/^[A-Za-z0-9_-]{22}$/.test(String(nonceB))) {
-      throw new Error('nonce が不正です');
-    }
+    if (!NONCE_RE.test(String(nonceA)) || !NONCE_RE.test(String(nonceB))) throw new Error('nonce が不正です');
     if (role !== 'initiator' && role !== 'responder') throw new Error('role が不正です');
+    if (typeof channelBinding !== 'string' || channelBinding.length < 16 || channelBinding.length > 4096) {
+      throw new Error('channel binding が不正です');
+    }
     const c = cryptoApi();
     const key = await c.subtle.importKey(
       'raw',
@@ -95,7 +126,9 @@
       false,
       ['sign']
     );
-    const bytes = new TextEncoder().encode(proofMessage(initiatorId, responderId, nonceA, nonceB, role));
+    const bytes = new TextEncoder().encode(
+      proofMessage(initiatorId, responderId, nonceA, nonceB, role, channelBinding)
+    );
     const sig = await c.subtle.sign('HMAC', key, bytes);
     return toBase64Url(new Uint8Array(sig));
   }
@@ -116,6 +149,8 @@
     createNonce,
     formatShareCode,
     parseShareCode,
+    fingerprintsFromSdp,
+    channelBindingFromSdps,
     makeProof,
     secureEqual,
     validPeerId,
