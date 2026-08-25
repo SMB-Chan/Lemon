@@ -36,6 +36,24 @@ jobs:
             mkdir -p "_site/$(dirname "$file")"
             cp -- "$file" "_site/$file"
           done < pages-files.txt
+
+          node <<'NODE'
+          const crypto = require('node:crypto');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const manifest = fs.readFileSync('pages-files.txt', 'utf8')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line && !line.startsWith('#'));
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const files = {};
+          for (const file of manifest) {
+            const bytes = fs.readFileSync(path.join('_site', file));
+            files[file] = crypto.createHash('sha256').update(bytes).digest('hex');
+          }
+          const info = { commit: process.env.GITHUB_SHA, version: pkg.version, files };
+          fs.writeFileSync('_site/build-info.json', JSON.stringify(info, null, 2) + '\n');
+          NODE
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
@@ -49,6 +67,20 @@ jobs:
     timeout-minutes: 5
     needs: build
     steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+      - name: Verify live deployed site
+        shell: bash
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          node tests/live-pages.mjs "$PAGE_URL" "$GITHUB_SHA" "$VERSION"

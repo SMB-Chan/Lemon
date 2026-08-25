@@ -73,6 +73,10 @@ const pagesWorkflow = read('.github/workflows/jekyll-gh-pages.yml');
 assert.ok(!pagesWorkflow.includes('jekyll-build-pages'), 'Pages must not run an unnecessary Jekyll build action');
 assert.ok(pagesWorkflow.includes('pages-files.txt'), 'Pages build must use the explicit runtime allowlist');
 assert.ok(pagesWorkflow.includes('path: ./_site'), 'Pages upload must publish only the constructed artifact');
+assert.ok(pagesWorkflow.includes("'_site/build-info.json'"), 'Pages build must generate deployment build-info');
+assert.ok(pagesWorkflow.includes('Verify live deployed site'), 'Pages deploy must verify the public site after deployment');
+assert.ok(pagesWorkflow.includes('steps.deployment.outputs.page_url'), 'live verification must use the actual deployment URL');
+assert.ok(pagesWorkflow.includes('tests/live-pages.mjs'), 'Pages deploy must run the live integrity smoke');
 
 // The Pages artifact is an explicit, unique set of runtime files only.
 const manifest = read('pages-files.txt').split(/\r?\n/)
@@ -86,8 +90,8 @@ for (const file of manifest) {
   assert.ok(!file.startsWith('tests/'), 'test files must not be deployed');
   assert.ok(fs.statSync(path.join(rootDir, file)).isFile(), `Pages runtime file is missing: ${file}`);
 }
-for (const forbidden of ['README.md', 'SECURITY.md', 'THIRD_PARTY_NOTICES.md', 'package.json', 'third-party-lock.json']) {
-  assert.ok(!manifest.includes(forbidden), `non-runtime repository file leaked into Pages artifact: ${forbidden}`);
+for (const forbidden of ['README.md', 'SECURITY.md', 'THIRD_PARTY_NOTICES.md', 'package.json', 'third-party-lock.json', 'build-info.json']) {
+  assert.ok(!manifest.includes(forbidden), `non-runtime/generated repository file leaked into Pages source manifest: ${forbidden}`);
 }
 
 const html = read('index.html');
@@ -99,5 +103,20 @@ for (const file of [...localScripts, ...localStyles, 'index.html']) {
 const policyAt = html.indexOf('./connection-policy.js');
 const appAt = html.indexOf('./app.js');
 assert.ok(policyAt >= 0 && appAt > policyAt, 'connection-policy.js must load before app.js');
+
+const liveSmoke = read('tests/live-pages.mjs');
+for (const token of [
+  'build-info.json',
+  "createHash('sha256')",
+  "createHash('sha512')",
+  'deployed bytes do not match build artifact',
+  'remote runtime dependency bytes fail SRI',
+]) {
+  assert.ok(liveSmoke.includes(token), `live Pages verification invariant missing: ${token}`);
+}
+
+const pkg = JSON.parse(read('package.json'));
+assert.equal(pkg.version, '1.3.2', 'stabilization release version must be 1.3.2');
+assert.match(pkg.scripts.test, /node --check tests\/live-pages\.mjs/, 'normal CI must syntax-check the live smoke script');
 
 console.log('Lemon stability/security tests passed');
