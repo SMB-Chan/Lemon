@@ -19,8 +19,8 @@
     return local < remote ? 'outgoing' : 'incoming';
   }
 
-  function shouldReplaceExisting(localId, remoteId, existingOutgoing, newOutgoing, existingOpen) {
-    if (existingOpen) return false;
+  function shouldReplaceExisting(localId, remoteId, existingOutgoing, newOutgoing, existingBusy) {
+    if (existingBusy) return false;
     if (!!existingOutgoing === !!newOutgoing) return false;
     const preferred = preferredDirection(localId, remoteId);
     return (preferred === 'outgoing') === !!newOutgoing;
