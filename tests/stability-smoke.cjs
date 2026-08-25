@@ -89,6 +89,8 @@ for (const token of [
   'Wait for this commit to reach public Pages',
   'tests/live-pages.mjs',
   'tests/live-browser-smoke.mjs',
+  'tests/live-auth-zip-smoke.mjs',
+  'Run wrong-secret and ZIP smoke',
 ]) {
   assert.ok(browserWorkflow.includes(token), `production browser smoke invariant missing: ${token}`);
 }
@@ -150,9 +152,27 @@ for (const token of [
 }
 assert.doesNotMatch(browserSmoke, /console\.log\([^\n]*invite/i, 'browser smoke must not log authenticated invites');
 
+const authZipSmoke = read('tests/live-auth-zip-smoke.mjs');
+for (const token of [
+  'wrong pairing secret auth failure',
+  'wrong-secret attempt leaked sender transfer state',
+  'pairing UI did not normalize the correct invite',
+  '0x06054b50',
+  '0x02014b50',
+  '0x04034b50',
+  'ZIP streaming/UTF-8 flags missing',
+  'ZIP entry CRC mismatch',
+  'ZIP payload SHA-256 mismatch',
+  'LemonCore.crc32',
+]) {
+  assert.ok(authZipSmoke.includes(token), `live auth/ZIP verification invariant missing: ${token}`);
+}
+assert.doesNotMatch(authZipSmoke, /console\.log\([^\n]*invite/i, 'auth/ZIP smoke must not log authenticated invites');
+
 const pkg = JSON.parse(read('package.json'));
-assert.equal(pkg.version, '1.3.4', 'browser boundary release version must be 1.3.4');
+assert.equal(pkg.version, '1.3.5', 'production auth/ZIP smoke release version must be 1.3.5');
 assert.match(pkg.scripts.test, /node --check tests\/live-pages\.mjs/, 'normal CI must syntax-check the live Pages smoke script');
 assert.match(pkg.scripts.test, /node --check tests\/live-browser-smoke\.mjs/, 'normal CI must syntax-check the live browser smoke script');
+assert.match(pkg.scripts.test, /node --check tests\/live-auth-zip-smoke\.mjs/, 'normal CI must syntax-check the live auth/ZIP smoke script');
 
 console.log('Lemon stability/security tests passed');
