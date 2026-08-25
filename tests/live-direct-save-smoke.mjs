@@ -193,24 +193,13 @@ try {
     waitFor('B Lemon initialization', () => evaluate(b, `document.readyState === 'complete' && !!window.__p2p && !!window.LemonAuth && !!window.LemonDiagnostics`)),
   ]);
 
-  // Replace only the browser file picker/writable sink. Lemon's capability, UI and transfer layers remain production code.
   await evaluate(b, `(() => {
     let releaseFirstWrite;
     const firstWriteGate = new Promise((resolve) => { releaseFirstWrite = resolve; });
     const state = window.__lemonDirectTest = {
-      pickerCalls: 0,
-      writeCalls: 0,
-      total: 0,
-      chunks: [],
-      firstWriteStarted: false,
-      firstWriteReleased: false,
-      closed: false,
-      aborted: false,
-      starts: 0,
-      completes: 0,
-      errors: 0,
-      objectUrls: 0,
-      suggestedName: null,
+      pickerCalls: 0, writeCalls: 0, total: 0, chunks: [], firstWriteStarted: false,
+      firstWriteReleased: false, closed: false, aborted: false, starts: 0,
+      completes: 0, errors: 0, objectUrls: 0, suggestedName: null,
       releaseFirstWrite() {
         if (this.firstWriteReleased) return;
         this.firstWriteReleased = true;
@@ -295,10 +284,9 @@ try {
 
   await waitFor('first direct writable write', () => evaluate(b, `window.__lemonDirectTest.firstWriteStarted === true`), 20000);
 
-  // Holding the first disk write forces Lemon's receive queue over 16 MiB. The sender-side capability proxy must expose the flow pause.
   const pausedAmount = await waitFor('sender flow-control pause', async () => {
     const value = await bufferedAmount(a);
-    return Number.isFinite(value) && value >= ${FLOW_BLOCK_AMOUNT} ? value : null;
+    return Number.isFinite(value) && value >= FLOW_BLOCK_AMOUNT ? value : null;
   }, 30000, 100);
   assert.ok(pausedAmount >= FLOW_BLOCK_AMOUNT, 'sender never entered the flow-control blocked state');
 
@@ -311,10 +299,9 @@ try {
 
   await evaluate(b, `window.__lemonDirectTest.releaseFirstWrite(); true`);
 
-  // Resume clears the synthetic 16 MiB bufferedAmount block; completion then proves the sender actually resumed.
   await waitFor('sender flow-control resume', async () => {
     const value = await bufferedAmount(a);
-    return Number.isFinite(value) && value < ${FLOW_BLOCK_AMOUNT};
+    return Number.isFinite(value) && value < FLOW_BLOCK_AMOUNT;
   }, 30000, 100);
 
   await Promise.all([
