@@ -214,8 +214,8 @@ try {
   })()`);
 
   await Promise.all([
-    waitFor('A authenticated connection', () => evaluate(a, `(() => { const s = window.__p2p.state(); return s.connections.length === 1 && s.connections[0].open ? s.connections[0].peer : null; })()`), 35000),
-    waitFor('B authenticated connection', () => evaluate(b, `(() => { const s = window.__p2p.state(); return s.connections.length === 1 && s.connections[0].open ? s.connections[0].peer : null; })()`), 35000),
+    waitFor('A authenticated connection + protocol hello', () => evaluate(a, `(() => { const s = window.__p2p.state(); const c = s.connections[0]; return s.connections.length === 1 && c.open && c.remoteVersion === 2 ? c.peer : null; })()`), 35000),
+    waitFor('B authenticated connection + protocol hello', () => evaluate(b, `(() => { const s = window.__p2p.state(); const c = s.connections[0]; return s.connections.length === 1 && c.open && c.remoteVersion === 2 ? c.peer : null; })()`), 35000),
   ]);
 
   const stateA = await evaluate(a, `window.__p2p.state()`);
