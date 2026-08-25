@@ -50,6 +50,16 @@ function runGuard(overrides = {}) {
   assert.equal(document.elements.get('connect-btn').disabled, false);
 }
 
+// A later transparent Proxy layer (capabilities.js) must preserve the auth marker.
+{
+  function AuthenticatedPeer() {}
+  Object.defineProperty(AuthenticatedPeer, '__lemonAuthWrapped', { value: true, configurable: true });
+  const CapabilityWrappedPeer = new Proxy(AuthenticatedPeer, {});
+  const { window } = runGuard({ Peer: CapabilityWrappedPeer, wrapped: false });
+  assert.equal(window.__LEMON_AUTH_GUARD__.ok, true);
+  assert.equal(window.Peer.__lemonAuthWrapped, true);
+}
+
 // If auth installation is missing/broken, the raw PeerJS constructor is removed.
 {
   function RawPeer() {}
@@ -90,14 +100,17 @@ function runGuard(overrides = {}) {
   assert.equal(window.Peer.__lemonAuthWrapped, true);
 }
 
-// The guard must execute after pairing helpers but before app.js can touch Peer.
+// The guard must execute after capability/pairing helpers but before app.js can touch Peer.
 const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
 const authAt = html.indexOf('./auth.js');
+const capabilityAt = html.indexOf('./capabilities.js');
 const pairingAt = html.indexOf('./pairing-ui.js');
 const guardAt = html.indexOf('./auth-guard.js');
 const appAt = html.indexOf('./app.js');
-assert.ok(authAt >= 0 && pairingAt > authAt && guardAt > pairingAt && appAt > guardAt,
-  'authentication guard must run before app.js');
+assert.ok(
+  authAt >= 0 && capabilityAt > authAt && pairingAt > capabilityAt && guardAt > pairingAt && appAt > guardAt,
+  'authentication guard must run after wrappers and before app.js'
+);
 
 for (const token of ['__lemonAuthWrapped', 'Web Crypto API', 'root.Peer = undefined', '__LEMON_AUTH_GUARD__']) {
   assert.ok(guardSource.includes(token), `auth guard coverage missing: ${token}`);
