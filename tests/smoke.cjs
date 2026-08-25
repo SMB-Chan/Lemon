@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const C = require('../core.js');
+const A = require('../auth.js');
 
 function rejects(fn, pattern) {
   assert.throws(fn, pattern);
@@ -54,8 +55,57 @@ const fake = (size) => ({ file: { size } });
 assert.deepEqual(C.partitionEntries([fake(6), fake(6), fake(2)], 10).map((p) => p.length), [1, 2]);
 assert.deepEqual(C.partitionEntries([fake(20), fake(1)], 10).map((p) => p.length), [1, 1]);
 
+// Authenticated pairing uses a canonical 128-bit capability secret.
+const zeroSecret = 'AAAAAAAAAAAAAAAAAAAAAA';
+assert.equal(A.validateSecret(zeroSecret), zeroSecret);
+assert.equal(A.decodeBase64Url(zeroSecret).byteLength, 16);
+assert.equal(A.encodeBase64Url(A.decodeBase64Url(zeroSecret)), zeroSecret);
+rejects(() => A.validateSecret('short'), /認証秘密/);
+rejects(() => A.validateSecret('AAAAAAAAAAAAAAAAAAAAA!'), /認証秘密/);
+
+const invite = A.makeInvite('drop-testpeer2', zeroSecret);
+assert.equal(invite, 'drop-testpeer2~' + zeroSecret);
+assert.deepEqual(A.parseInvite(invite), {
+  peerId: 'drop-testpeer2',
+  secret: zeroSecret,
+  invite,
+});
+assert.deepEqual(A.parseInvite('https://example.test/lemon/#peer=' + encodeURIComponent(invite)), {
+  peerId: 'drop-testpeer2',
+  secret: zeroSecret,
+  invite,
+});
+assert.deepEqual(A.parseInvite('https://example.test/lemon/?peer=drop-testpeer2&key=' + zeroSecret), {
+  peerId: 'drop-testpeer2',
+  secret: zeroSecret,
+  invite,
+});
+
+// Pairing URLs keep the capability in the fragment rather than the HTTP request query.
+const pairingUrl = new URL(A.makePairingUrl('https://example.test/lemon/?debug=1&peer=legacy#view=diag', invite));
+assert.equal(pairingUrl.searchParams.get('debug'), '1');
+assert.equal(pairingUrl.searchParams.has('peer'), false);
+assert.equal(new URLSearchParams(pairingUrl.hash.slice(1)).get('peer'), invite);
+
+// DTLS fingerprint channel binding is deterministic across endpoint order.
+const localSdp = 'v=0\r\na=fingerprint:sha-256 AA:BB:CC\r\n';
+const remoteSdp = 'v=0\r\na=fingerprint:sha-256 11:22:33\r\n';
+const bindingA = A.channelBindingFromSdps(localSdp, remoteSdp);
+const bindingB = A.channelBindingFromSdps(remoteSdp, localSdp);
+assert.equal(bindingA, bindingB);
+assert.ok(bindingA.includes('sha-256:AA:BB:CC'));
+assert.ok(bindingA.includes('sha-256:11:22:33'));
+rejects(() => A.channelBindingFromSdps(localSdp, ''), /フィンガープリント/);
+
+// Mutual proofs are role-separated even when every other transcript field is identical.
+const responderTranscript = A.authTranscript('responder', 'drop-r', 'drop-i', zeroSecret, bindingA);
+const initiatorTranscript = A.authTranscript('initiator', 'drop-r', 'drop-i', zeroSecret, bindingA);
+assert.notEqual(responderTranscript, initiatorTranscript);
+assert.ok(responderTranscript.startsWith('lemon-auth/v1\nresponder\n'));
+assert.ok(initiatorTranscript.startsWith('lemon-auth/v1\ninitiator\n'));
+
 // Browser modules must at least parse as JavaScript without executing DOM code.
-for (const file of ['diagnostics.js', 'app.js']) {
+for (const file of ['auth.js', 'diagnostics.js', 'pairing-ui.js', 'app.js']) {
   const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
   assert.doesNotThrow(() => new Function(source), `${file} has a syntax error`);
 }
@@ -69,11 +119,14 @@ const qrSri = 'sha512-ZDSPMa/JM1D+7kdg2x3BsruQ6T/JpJo3jWDWkCZsP+5yVyp1KfESqLI+7R
 const styleAt = html.indexOf('./styles.css');
 const peerAt = html.indexOf(peerUrl);
 const qrAt = html.indexOf(qrUrl);
+const authAt = html.indexOf('auth.js');
 const coreAt = html.indexOf('core.js');
 const diagAt = html.indexOf('diagnostics.js');
+const pairingAt = html.indexOf('pairing-ui.js');
 const appAt = html.indexOf('app.js');
 assert.ok(
-  styleAt >= 0 && peerAt > styleAt && qrAt > peerAt && coreAt > qrAt && diagAt > coreAt && appAt > diagAt,
+  styleAt >= 0 && peerAt > styleAt && qrAt > peerAt && authAt > qrAt && coreAt > authAt &&
+  diagAt > coreAt && pairingAt > diagAt && appAt > pairingAt,
   'resource loading order is invalid'
 );
 assert.ok(html.includes('id="diag-refresh"'), 'diagnostics refresh control is missing');
@@ -107,6 +160,16 @@ for (const [, attrs] of remoteScripts) {
   assert.match(attrs, /\bcrossorigin="anonymous"/i);
   assert.match(attrs, /\breferrerpolicy="no-referrer"/i);
 }
+
+const authSource = fs.readFileSync(path.join(__dirname, '..', 'auth.js'), 'utf8');
+for (const token of ['HMAC', 'SHA-256', 'lemon-auth-challenge', 'lemon-auth-response', 'lemon-auth-ok', 'localDescription', 'remoteDescription']) {
+  assert.ok(authSource.includes(token), `authentication coverage missing: ${token}`);
+}
+assert.ok(!authSource.includes('console.log'), 'authentication code must not log pairing material');
+
+const pairingSource = fs.readFileSync(path.join(__dirname, '..', 'pairing-ui.js'), 'utf8');
+assert.ok(pairingSource.includes('history.replaceState'), 'pairing URL must be scrubbed after capture');
+assert.ok(pairingSource.includes('makePairingUrl'), 'pairing UI must generate fragment-based URLs');
 
 const diagnostics = fs.readFileSync(path.join(__dirname, '..', 'diagnostics.js'), 'utf8');
 for (const token of ['getStats', 'selectedCandidatePairId', 'candidate-pair', 'availableOutgoingBitrate', 'maxMessageSize', 'bufferedAmount']) {
