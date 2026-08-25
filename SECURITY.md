@@ -12,16 +12,25 @@ Lemon is a browser-based peer-to-peer file transfer tool. This document describe
 - Remote JavaScript dependencies are version-pinned and protected by Subresource Integrity (SRI).
 - A Content Security Policy restricts script, style, object, frame and network sources.
 - External scripts are loaded without a referrer and with anonymous CORS.
+- Connection diagnostics use the browser's local `RTCPeerConnection.getStats()` API; no diagnostics endpoint is added.
 
 ## Runtime trust boundary
 
 The browser executes these code sources:
 
-1. Lemon's own `index.html`, `app.js`, `core.js` and `styles.css`.
+1. Lemon's own `index.html`, `app.js`, `core.js`, `diagnostics.js` and `styles.css`.
 2. PeerJS 1.5.5 from cdnjs, accepted only when its SHA-512 SRI digest matches.
 3. qrcode-generator 1.4.4 from cdnjs, accepted only when its SHA-512 SRI digest matches.
 
 The page is permitted to connect to the PeerJS public signaling service at `0.peerjs.com`. The signaling service is required to broker peer discovery and WebRTC setup. File payloads are sent through the WebRTC DataChannel rather than uploaded to that signaling endpoint.
+
+## Connection diagnostics and privacy
+
+The diagnostics panel inspects the selected ICE candidate pair locally. It may determine candidate type (`host`, `srflx`, `prflx`, or `relay`), transport protocol, RTT, browser-reported available outgoing bitrate, SCTP message-size limits, and DataChannel buffered bytes.
+
+The visible UI intentionally does **not** print candidate IP addresses. `window.LemonDiagnostics.snapshot()` is a developer-facing local API and may include candidate address/port values when the browser exposes them through `getStats()`. Lemon does not transmit these diagnostic results to an application server.
+
+A `TURN relay` result means the WebRTC data path is using a relay candidate; `P2P direct` means the selected pair is not reported as relay. This is an operational diagnostic, not a security/authentication result.
 
 ## Important non-guarantees
 
