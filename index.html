@@ -3,10 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>P2P ファイル転送</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>">
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<title>Lemon — P2P ファイル転送</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍋</text></svg>">
+<script defer src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script defer src="./core.js"></script>
+<script defer src="./app.js"></script>
 <style>
 :root {
   --bg: #0f1117;
@@ -21,6 +23,7 @@
   --radius: 12px;
 }
 * { box-sizing: border-box; }
+html { color-scheme: dark; }
 body {
   margin: 0;
   background: var(--bg);
@@ -28,6 +31,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", "Hiragino Sans", sans-serif;
   line-height: 1.5;
 }
+button, input { font: inherit; }
 header {
   display: flex;
   align-items: center;
@@ -35,26 +39,46 @@ header {
   gap: 12px;
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: rgba(15, 17, 23, .94);
+  backdrop-filter: blur(10px);
 }
 h1 { font-size: 18px; margin: 0; }
 h2 { font-size: 13px; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
-.status { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
-.status.ok   { color: var(--ok);     border-color: var(--ok); }
-.status.warn { color: var(--warn);   border-color: var(--warn); }
-.status.err  { color: var(--danger); border-color: var(--danger); }
+.status {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.status.ok { color: var(--ok); border-color: var(--ok); }
+.status.warn { color: var(--warn); border-color: var(--warn); }
+.status.err { color: var(--danger); border-color: var(--danger); }
 main {
-  max-width: 640px;
+  max-width: 680px;
   margin: 0 auto;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
-.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
 .id-row { display: flex; gap: 8px; align-items: center; }
 .id {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 26px; letter-spacing: 2px; font-weight: 700; color: var(--accent);
+  font-size: clamp(18px, 5vw, 26px);
+  letter-spacing: 1.5px;
+  font-weight: 700;
+  color: var(--accent);
   overflow-wrap: anywhere;
 }
 .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
@@ -62,46 +86,66 @@ main {
 #my-qr { width: 180px; height: 180px; background: #fff; padding: 10px; border-radius: 10px; image-rendering: pixelated; }
 .qr-hint { font-size: 11px; color: var(--muted); text-align: center; margin: 0; }
 button {
-  background: var(--accent); color: #fff; border: none; border-radius: 8px;
-  padding: 8px 14px; font-size: 14px; cursor: pointer; white-space: nowrap;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
 }
 button:hover { filter: brightness(1.1); }
+button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button:disabled { opacity: .5; cursor: not-allowed; }
 button.sub { background: #232836; color: var(--text); }
-button.ok    { background: var(--ok); color: #04281b; }
-button.danger{ background: transparent; color: var(--danger); border: 1px solid var(--danger); padding: 6px 10px; }
+button.ok { background: var(--ok); color: #04281b; }
+button.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); padding: 6px 10px; }
 .connect-row { display: flex; gap: 8px; }
 input[type="text"] {
-  flex: 1; min-width: 0;
-  background: #0f1219; color: var(--text);
-  border: 1px solid var(--border); border-radius: 8px;
-  padding: 8px 12px; font-size: 14px;
-  font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: 1px;
+  flex: 1;
+  min-width: 0;
+  background: #0f1219;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: 1px;
 }
-input[type="text"]:focus { outline: none; border-color: var(--accent); }
 ul { list-style: none; margin: 0; padding: 0; }
 #conn-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 .conn-row {
-  display: flex; align-items: center; gap: 8px;
-  background: #0f1219; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #0f1219;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
   font-size: 13px;
 }
 .conn-row.selected { border-color: var(--accent); }
 .conn-row .name { flex: 1; font-family: ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
 #dropzone {
-  border: 2px dashed var(--border); border-radius: var(--radius);
-  padding: 24px 16px; text-align: center; color: var(--muted); font-size: 14px;
-  cursor: pointer; transition: border-color .15s, background .15s;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 26px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
 }
-#dropzone.over { border-color: var(--accent); background: rgba(79,140,255,.08); color: var(--text); }
-.pick-row { display: flex; gap: 8px; margin-top: 10px; }
+#dropzone.over { border-color: var(--accent); background: rgba(79, 140, 255, .08); color: var(--text); }
+.pick-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .zip-opt { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
 .zip-opt input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; flex: none; }
-.zip-side { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--muted); }
-.zip-side select { background: #0f1219; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font-size: 12px; }
-#send-target { margin-top: 10px; font-size: 12px; color: var(--muted); }
+#send-target { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
 #send-target b { color: var(--text); font-family: ui-monospace, Menlo, Consolas, monospace; }
+.security-note { margin: 10px 0 0; font-size: 11px; color: var(--muted); }
 #transfer-list { display: flex; flex-direction: column; gap: 10px; }
 .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 6px 0; }
 .transfer { background: #0f1219; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
@@ -109,8 +153,8 @@ ul { list-style: none; margin: 0; padding: 0; }
 .t-name { flex: 1; overflow-wrap: anywhere; }
 .t-size { color: var(--muted); font-size: 12px; flex: none; }
 .dir { font-size: 11px; padding: 2px 8px; border-radius: 999px; flex: none; }
-.dir.send { background: rgba(79,140,255,.15); color: var(--accent); }
-.dir.recv { background: rgba(52,211,153,.15); color: var(--ok); }
+.dir.send { background: rgba(79, 140, 255, .15); color: var(--accent); }
+.dir.recv { background: rgba(52, 211, 153, .15); color: var(--ok); }
 .t-bar { height: 6px; border-radius: 3px; background: #232836; margin-top: 8px; overflow: hidden; }
 .t-fill { height: 100%; width: 0%; background: var(--accent); border-radius: 3px; transition: width .15s; }
 .transfer.done .t-fill { background: var(--ok); }
@@ -121,37 +165,70 @@ ul { list-style: none; margin: 0; padding: 0; }
 .t-actions { display: flex; gap: 6px; }
 .t-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 a.save-btn {
-  display: inline-block; text-decoration: none;
-  background: var(--ok); color: #04281b; border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600;
+  display: inline-block;
+  text-decoration: none;
+  background: var(--ok);
+  color: #04281b;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
 }
 a.save-btn.small {
-  background: #232836; color: var(--text); font-weight: 400; padding: 4px 10px; font-size: 12px;
-  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: #232836;
+  color: var(--text);
+  font-weight: 400;
+  padding: 4px 10px;
+  font-size: 12px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 #toast {
-  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
-  background: #232836; color: var(--text); border: 1px solid var(--border);
-  padding: 10px 16px; border-radius: 10px; font-size: 13px;
-  opacity: 0; pointer-events: none; transition: opacity .2s; max-width: 90vw; text-align: center;
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  background: #232836;
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s;
+  max-width: 90vw;
+  text-align: center;
+  z-index: 10;
 }
 #toast.show { opacity: 1; }
+@media (max-width: 520px) {
+  header { padding: 12px 14px; }
+  main { padding: 12px; }
+  .card { padding: 14px; }
+  .connect-row { flex-direction: column; }
+  .conn-row { flex-wrap: wrap; }
+  .conn-row .name { flex-basis: 100%; }
+}
 </style>
 </head>
 <body>
 <header>
-  <h1>📡 P2P ファイル転送</h1>
-  <span id="status" class="status">サーバー接続中…</span>
+  <h1>🍋 Lemon</h1>
+  <span id="status" class="status" aria-live="polite">サーバー接続中…</span>
 </header>
 <main>
   <section class="card">
     <h2>自分のコード</h2>
     <div class="id-row">
-      <span id="my-id" class="id">------</span>
-      <button id="copy-btn" class="sub">コピー</button>
+      <span id="my-id" class="id">----------</span>
+      <button id="copy-btn" class="sub" type="button">コピー</button>
     </div>
-    <p class="hint">このコードを相手に伝え、相手の画面で入力してもらうと接続できます（英数字・大文字小文字もそのまま）。</p>
+    <p class="hint">このコードを相手に伝えて接続します。v1.1からコード長を伸ばし、推測耐性を高めています。</p>
     <div class="qr-box">
-      <canvas id="my-qr" hidden></canvas>
+      <canvas id="my-qr" hidden aria-label="接続用QRコード"></canvas>
       <p id="qr-hint" class="qr-hint"></p>
     </div>
   </section>
@@ -159,1443 +236,31 @@ a.save-btn.small {
   <section class="card">
     <h2>相手と接続</h2>
     <div class="connect-row">
-      <input type="text" id="peer-input" placeholder="相手のコードを入力" autocomplete="off" spellcheck="false">
-      <button id="connect-btn">接続</button>
+      <input type="text" id="peer-input" placeholder="相手のコードを入力" autocomplete="off" spellcheck="false" aria-label="相手のコード">
+      <button id="connect-btn" type="button">接続</button>
     </div>
     <ul id="conn-list"></ul>
   </section>
 
   <section class="card">
     <h2>ファイル・フォルダを送信</h2>
-    <div id="dropzone">ここにファイルやフォルダをドラッグ＆ドロップ</div>
+    <div id="dropzone" tabindex="0">ここにファイルやフォルダをドラッグ＆ドロップ</div>
     <div class="pick-row">
-      <button id="file-btn" class="sub">ファイルを選択</button>
-      <button id="folder-btn" class="sub">フォルダを選択</button>
+      <button id="file-btn" class="sub" type="button">ファイルを選択</button>
+      <button id="folder-btn" class="sub" type="button">フォルダを選択</button>
     </div>
-    <label class="zip-opt"><input type="checkbox" id="zip-opt" checked> 複数のファイル・フォルダは1つのZIPにまとめて送信（無圧縮・高速）</label>
-    <label class="zip-side">梱包作業は
-      <select id="zip-side">
-        <option value="sender" selected>送信側がやる（推奨・互換性重視）</option>
-        <option value="receiver">受信側がやる（送信端末が遅いとき）</option>
-      </select>
-    </label>
+    <label class="zip-opt"><input type="checkbox" id="zip-opt" checked> 複数のファイル・フォルダは1つのZIPにまとめる（無圧縮・1回読み）</label>
     <input type="file" id="file-input" multiple hidden>
     <input type="file" id="folder-input" webkitdirectory multiple hidden>
     <p id="send-target">送信先: まだ接続なし</p>
+    <p class="security-note">同じ相手への送信は自動的に順番待ちになります。受信完了時にはサイズとCRC32を検証します。</p>
   </section>
 
   <section class="card">
     <h2>転送状況</h2>
-    <ul id="transfer-list"><li class="empty">まだ転送はありません</li></ul>
+    <ul id="transfer-list" aria-live="polite"><li class="empty">まだ転送はありません</li></ul>
   </section>
 </main>
-<div id="toast"></div>
-
-<script id="app">
-(function () {
-  'use strict';
-
-  const $ = (s) => document.querySelector(s);
-  const myIdEl = $('#my-id');
-  const statusEl = $('#status');
-  const copyBtn = $('#copy-btn');
-  const peerInput = $('#peer-input');
-  const connectBtn = $('#connect-btn');
-  const connListEl = $('#conn-list');
-  const dropzone = $('#dropzone');
-  const fileInput = $('#file-input');
-  const folderInput = $('#folder-input');
-  const sendTargetEl = $('#send-target');
-  const transferListEl = $('#transfer-list');
-  const toastEl = $('#toast');
-  const zipOpt = $('#zip-opt');
-  const qrCanvas = $('#my-qr');
-  const qrHint = $('#qr-hint');
-  const zipSide = $('#zip-side');
-
-  // 仕様の最小保証は64KBだが、主要ブラウザは1MBメッセージを問題なく扱える。
-  // チャンクが大きいほど読み出し呼び出し回数が減り、1回あたりの开销が効く端末で有利
-  const CHUNK = 1024 * 1024;
-  const HASH_CHUNK = 1024 * 1024;
-  const BUFFER_HIGH = 4 * 1024 * 1024;
-  const BUFFER_LOW = 1 * 1024 * 1024;
-  const RECV_STALL_MS = 15000;
-  const PART_LIMIT = 1024 * 1024 * 1024; // 大量転送を分割するときの1ZIPあたりの上限
-  const ID_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
-
-  let peer = null;
-  let reconnecting = false;
-  const connections = new Map(); // peerId -> DataConnection
-  let selectedConn = null;
-  let quietPeerErrors = false; // 自動再接続中は「相手が見つからない」トーストを出さない
-
-  // ---------- utilities ----------
-
-  function uid() {
-    return crypto.randomUUID ? crypto.randomUUID() : String(Math.random());
-  }
-
-  function randomId() {
-    let s = '';
-    const rnd = crypto.getRandomValues(new Uint32Array(6));
-    for (let i = 0; i < 6; i++) s += ID_ALPHABET[rnd[i] % ID_ALPHABET.length];
-    return 'drop-' + s;
-  }
-
-  function fmtBytes(n) {
-    if (n < 1024) return n + ' B';
-    const units = ['KB', 'MB', 'GB', 'TB'];
-    let i = -1;
-    do { n /= 1024; i++; } while (n >= 1024 && i < units.length - 1);
-    return n.toFixed(n < 10 ? 1 : 0) + ' ' + units[i];
-  }
-
-  function safeName(path) {
-    return String(path).replace(/[\/\\]/g, '_');
-  }
-
-  let toastTimer = null;
-  function toast(msg) {
-    toastEl.textContent = msg;
-    toastEl.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3000);
-  }
-
-  function setStatus(text, cls) {
-    statusEl.textContent = text;
-    statusEl.className = 'status' + (cls ? ' ' + cls : '');
-  }
-
-  // 転送中の画面自動オフ防止（画面オフ/バックグラウンドで処理が絞られる端末がある）
-  let wakeLockHandle = null;
-  let activeTransfers = 0;
-
-  async function acquireWakeLock() {
-    if (wakeLockHandle || !('wakeLock' in navigator)) return;
-    try {
-      wakeLockHandle = await navigator.wakeLock.request('screen');
-      wakeLockHandle.addEventListener('release', () => { wakeLockHandle = null; }, { once: true });
-    } catch (_) {}
-  }
-  function releaseWakeLock() {
-    if (!wakeLockHandle) return;
-    wakeLockHandle.release().catch(() => {});
-    wakeLockHandle = null;
-  }
-  // 無音オーディオ: 画面が消えても処理が絞られにくくする（AndroidのDoze対策・ベストエフォート）
-  let keepAliveAudio = null;
-  function startKeepAliveAudio() {
-    if (keepAliveAudio) return;
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      gain.gain.value = 0;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      ctx.resume().catch(() => {});
-      keepAliveAudio = { ctx, osc };
-    } catch (_) {}
-  }
-  function stopKeepAliveAudio() {
-    if (!keepAliveAudio) return;
-    try { keepAliveAudio.osc.stop(); } catch (_) {}
-    try { keepAliveAudio.ctx.close(); } catch (_) {}
-    keepAliveAudio = null;
-  }
-  function beginTransfer() { activeTransfers++; acquireWakeLock(); startKeepAliveAudio(); }
-  function endTransfer() {
-    activeTransfers = Math.max(0, activeTransfers - 1);
-    if (activeTransfers === 0) { releaseWakeLock(); stopKeepAliveAudio(); }
-  }
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && activeTransfers > 0) acquireWakeLock();
-  });
-
-  // ---------- QR pairing ----------
-
-  function pairingUrl(id) {
-    if (location.protocol === 'http:' || location.protocol === 'https:') {
-      return location.origin + location.pathname + '?peer=' + encodeURIComponent(id);
-    }
-    return id; // file:// などではリンクにならないのでコード自体を入れる
-  }
-
-  function drawQR(canvas, text) {
-    const qr = qrcode(0, 'M');
-    qr.addData(text);
-    qr.make();
-    const n = qr.getModuleCount();
-    const quiet = 4;
-    const scale = Math.max(2, Math.floor(240 / (n + quiet * 2)));
-    const size = (n + quiet * 2) * scale;
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, size, size);
-    ctx.fillStyle = '#000';
-    for (let r = 0; r < n; r++) {
-      for (let c = 0; c < n; c++) {
-        if (qr.isDark(r, c)) ctx.fillRect((quiet + c) * scale, (quiet + r) * scale, scale, scale);
-      }
-    }
-  }
-
-  function refreshQR(id) {
-    if (!id) return;
-    if (typeof qrcode !== 'function') {
-      qrHint.textContent = 'QRライブラリを読み込めませんでした（要ネット接続）';
-      return;
-    }
-    const url = pairingUrl(id);
-    try {
-      drawQR(qrCanvas, url);
-      qrCanvas.hidden = false;
-      qrHint.textContent = (location.protocol === 'http:' || location.protocol === 'https:')
-        ? '相手の端末でスキャンすると、コード入力なしで自動接続できます'
-        : 'ローカルファイル起動のためスキャンから直接開けません。コードを手入力してください';
-    } catch (err) {
-      console.error(err);
-      qrHint.textContent = 'QRを生成できませんでした';
-    }
-  }
-
-  // ---------- peer ----------
-
-  function initPeer(id) {
-    peer = new Peer(id, { debug: 1 });
-
-    peer.on('open', (pid) => {
-      myIdEl.textContent = pid;
-      setStatus('準備完了', 'ok');
-      refreshQR(pid);
-      if (preset && !presetUsed) {
-        presetUsed = true;
-        connectTo(preset);
-      }
-    });
-
-    peer.on('connection', (conn) => setupConnection(conn, false));
-
-    peer.on('disconnected', () => {
-      if (peer.destroyed) return;
-      setStatus('再接続中…', 'warn');
-      if (!reconnecting) {
-        reconnecting = true;
-        setTimeout(() => { try { peer.reconnect(); } catch (_) {} reconnecting = false; }, 1000);
-      }
-    });
-
-    peer.on('error', (err) => {
-      switch (err.type) {
-        case 'unavailable-id':
-          peer.destroy();
-          initPeer(randomId());
-          break;
-        case 'peer-unavailable': {
-          const quiet = quietPeerErrors;
-          quietPeerErrors = false;
-          if (!quiet) toast('そのコードの相手が見つかりませんでした');
-          connectBtn.disabled = false;
-          break;
-        }
-        case 'network':
-        case 'server-error':
-        case 'socket-error':
-        case 'socket-closed':
-          setStatus('シグナリングサーバーに接続できません', 'err');
-          break;
-        default:
-          console.error(err);
-      }
-    });
-  }
-
-  // ---------- connections ----------
-
-  function setupConnection(conn, outgoing) {
-    const remoteId = conn.peer;
-    if (connections.has(remoteId)) {
-      if (outgoing) { toast('既に接続済みです'); conn.close(); }
-      return;
-    }
-    connections.set(remoteId, conn);
-    conn._pendingAccept = null; // {metaId, res}
-    conn._incoming = null;      // 受信中ファイルの状態
-    conn._folder = null;        // 受信中フォルダの状態
-    conn._bundle = null;        // 受信中バンドル（受信側でZIP組み立て）の状態
-    conn._autoSplit = null;     // 承認済みの分割送信ID（後続パートは自動受信）
-    conn._partAck = null;       // 受信側の「保存した」通知
-    conn._stallTimer = null;
-
-    conn.on('open', () => {
-      renderConnections();
-      if (!selectedConn || !selectedConn.open) selectConnection(conn);
-      toast(remoteId + ' と接続しました');
-    });
-
-    conn.on('data', (data) => handleData(conn, data));
-
-    conn.on('close', () => {
-      if (conn._pendingAccept) { conn._pendingAccept.res(false); conn._pendingAccept = null; }
-      if (conn._stallTimer) { clearInterval(conn._stallTimer); conn._stallTimer = null; }
-      if (conn._folder) {
-        setEntryStatus(conn._folder.entry, '中断（切断されました）');
-        endTransfer();
-        conn._folder = null;
-      }
-      if (conn._bundle) {
-        setEntryStatus(conn._bundle.entry, '中断（切断・送信側が再送します）');
-        endTransfer();
-        conn._bundle = null;
-      }
-      if (conn._incoming) {
-        if (!conn._incoming.isFolderFile && !conn._incoming.bundle) {
-          setEntryStatus(conn._incoming.entry, '中断（切断されました）');
-          endTransfer();
-        }
-        conn._incoming = null;
-      }
-      connections.delete(remoteId);
-      if (selectedConn === conn) selectConnection(null);
-      renderConnections();
-    });
-
-    conn.on('error', (err) => { console.error(err); toast('接続エラー: ' + remoteId); });
-  }
-
-  function selectConnection(conn) {
-    selectedConn = conn && conn.open ? conn : null;
-    sendTargetEl.innerHTML = selectedConn
-      ? '送信先: <b></b>'
-      : '送信先: まだ接続なし';
-    if (selectedConn) sendTargetEl.querySelector('b').textContent = selectedConn.peer;
-    renderConnections();
-  }
-
-  function renderConnections() {
-    connListEl.innerHTML = '';
-    for (const [pid, conn] of connections) {
-      const li = document.createElement('li');
-      li.className = 'conn-row' + (conn === selectedConn ? ' selected' : '');
-      const dot = document.createElement('span');
-      dot.className = 'dot';
-      const name = document.createElement('span');
-      name.className = 'name';
-      name.textContent = pid;
-      const useBtn = document.createElement('button');
-      useBtn.className = 'sub';
-      useBtn.textContent = conn === selectedConn ? '送信先に指定中' : 'これに送信';
-      useBtn.onclick = () => selectConnection(conn);
-      const cutBtn = document.createElement('button');
-      cutBtn.className = 'danger';
-      cutBtn.textContent = '切断';
-      cutBtn.onclick = () => conn.close();
-      li.append(dot, name, useBtn, cutBtn);
-      connListEl.appendChild(li);
-    }
-  }
-
-  function connectTo(rawId, quiet) {
-    const id = rawId.trim();
-    if (!id) return;
-    if (peer && id === peer.id) { if (!quiet) toast('自分自身には接続できません'); return; }
-    if (connections.has(id)) {
-      if (!quiet) { toast('既に接続済みです'); selectConnection(connections.get(id)); }
-      return;
-    }
-    connectBtn.disabled = true;
-    quietPeerErrors = !!quiet;
-    const conn = peer.connect(id, { reliable: true, serialization: 'binary' });
-    setupConnection(conn, true);
-    conn.on('open', () => { connectBtn.disabled = false; quietPeerErrors = false; });
-    setTimeout(() => { connectBtn.disabled = false; }, 10000);
-  }
-
-  function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
-  // 相手との（再）接続を待つ。スリープ等での切断後の自動復帰用
-  async function ensureConnection(remoteId, tries, intervalMs) {
-    for (let i = 0; i < tries; i++) {
-      const c = connections.get(remoteId);
-      if (c && c.open) return c;
-      if (peer && !peer.destroyed) {
-        try { connectTo(remoteId, true); } catch (_) {}
-      }
-      await sleep(intervalMs);
-    }
-    const c = connections.get(remoteId);
-    return c && c.open ? c : null;
-  }
-
-  // ---------- input handling (files / folders) ----------
-
-  async function entriesFromDataTransfer(dt) {
-    const items = dt.items ? Array.from(dt.items) : [];
-    const roots = items.map((i) => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null)).filter(Boolean);
-    const out = [];
-    if (roots.length) {
-      for (const root of roots) await walkEntry(root, '', out);
-      return out;
-    }
-    return Array.from(dt.files || []).map((f) => ({ file: f, path: f.name }));
-  }
-
-  function walkEntry(entry, basePath, out) {
-    return new Promise((resolve) => {
-      if (entry.isFile) {
-        entry.file(
-          (file) => { out.push({ file, path: basePath + entry.name }); resolve(); },
-          () => resolve()
-        );
-      } else if (entry.isDirectory) {
-        const reader = entry.createReader();
-        const prefix = basePath + entry.name + '/';
-        const readBatch = () => reader.readEntries(
-          async (batch) => {
-            if (!batch.length) return resolve();
-            for (const child of batch) await walkEntry(child, prefix, out);
-            readBatch(); // readEntries は一度に全件返らないことがある
-          },
-          () => resolve()
-        );
-        readBatch();
-      } else {
-        resolve();
-      }
-    });
-  }
-
-  async function sendSelected(entries) {
-    if (!entries || !entries.length) { toast('送信できるファイルがありませんでした'); return; }
-    if (!selectedConn || !selectedConn.open) {
-      toast('送信する前に相手と接続してください');
-      return;
-    }
-    const conn = selectedConn;
-    if (zipOpt.checked && entries.length > 1) {
-      const zipName = pickZipName(entries);
-      try {
-        const parts = partitionEntries(entries);
-        if (parts.length === 1) {
-          if (zipSide.value === 'receiver') await sendBundle(conn, entries, zipName);
-          else await sendAsZip(conn, entries, zipName);
-        } else {
-          await sendSplit(conn, parts, zipName);
-        }
-      } catch (err) { console.error(err); }
-      return;
-    }
-    const singles = [];
-    const groups = new Map(); // トップフォルダ名 -> entries
-    for (const e of entries) {
-      if (e.path && e.path.includes('/')) {
-        const top = e.path.split('/')[0];
-        if (!groups.has(top)) groups.set(top, []);
-        groups.get(top).push(e);
-      } else {
-        singles.push(e);
-      }
-    }
-    for (const [top, list] of groups) {
-      try { await sendFolder(conn, top, list); } catch (err) { console.error(err); }
-    }
-    for (const s of singles) {
-      try { await sendFile(conn, s.file); } catch (err) { console.error(err); }
-    }
-  }
-
-  // 大量転送は1パートをPART_LIMIT以下に分割し、1つずつ送受信してメモリ使用量を抑える
-  function partitionEntries(entries) {
-    const parts = [];
-    let cur = [];
-    let curSize = 0;
-    for (const e of entries) {
-      if (cur.length && curSize + e.file.size > PART_LIMIT) {
-        parts.push(cur);
-        cur = [];
-        curSize = 0;
-      }
-      cur.push(e);
-      curSize += e.file.size;
-    }
-    if (cur.length) parts.push(cur);
-    return parts;
-  }
-
-  async function sendSplit(conn, parts, baseName) {
-    const remoteId = conn.peer;
-    const splitId = uid();
-    const stem = baseName.replace(/\.zip$/i, '');
-    toast(parts.length + ' 個のZIPに分割して送信します');
-
-    for (let i = 0; i < parts.length; i++) {
-      const partName = stem + '-' + (i + 1) + 'of' + parts.length + '.zip';
-      const opts = { splitId, partIndex: i, partCount: parts.length };
-      let res = 'error';
-      let attempts = 0;
-      while (res === 'error' && attempts < 5) {
-        const c = attempts === 0 && conn.open ? conn : await ensureConnection(remoteId, 40, 5000);
-        if (!c) { toast('再接続できないため、分割送信を中止します'); return; }
-        attempts++;
-        res = zipSide.value === 'receiver'
-          ? await sendBundle(c, parts[i], partName, opts)
-          : await sendAsZip(c, parts[i], partName, opts);
-        if (res === 'error') toast('切断されました。自動再接続します…');
-      }
-      if (res !== 'done') return; // 拒否・繰返し失敗なら中断
-
-      // 受信側が保存してから次パートへ（メモリ解放のため・ベストエフォート）
-      if (i < parts.length - 1) {
-        const c = connections.get(remoteId);
-        if (c && c.open) await waitForPartAck(c, splitId, i, 10 * 60 * 1000);
-      }
-    }
-    toast('分割送信が完了しました（' + parts.length + ' パート）');
-  }
-
-  function waitForPartAck(conn, splitId, partIndex, timeoutMs) {
-    return new Promise((res) => {
-      const t0 = Date.now();
-      const timer = setInterval(() => {
-        const ack = conn._partAck;
-        if (ack && ack.splitId === splitId && ack.partIndex === partIndex) {
-          conn._partAck = null;
-          clearInterval(timer);
-          res(true);
-        } else if (!conn.open || Date.now() - t0 > timeoutMs) {
-          clearInterval(timer);
-          res(false);
-        }
-      }, 500);
-    });
-  }
-
-  // ---------- sending ----------
-
-  function waitForAccept(conn, metaId) {
-    return new Promise((res) => {
-      conn._pendingAccept = { metaId, res };
-      setTimeout(() => {
-        if (conn._pendingAccept && conn._pendingAccept.metaId === metaId) {
-          conn._pendingAccept = null;
-          res(false);
-        }
-      }, 60000);
-    });
-  }
-
-  function waitBufferDrain(conn) {
-    return new Promise((res) => {
-      const dc = conn.dataChannel;
-      if (!dc || dc.bufferedAmount < BUFFER_HIGH) return res();
-      const t = setInterval(() => {
-        if (!conn.open || dc.bufferedAmount < BUFFER_LOW) { clearInterval(t); res(); }
-      }, 30);
-    });
-  }
-
-  function failEntry(entry, msg) {
-    setEntryStatus(entry, msg);
-    markEntry(entry, 'failed');
-  }
-
-  async function streamFile(conn, entry, file, onChunk) {
-    // 先読みパイプライン: チャンク送信中に次以降のチャンクを並行して読む。
-    // 読み出しレイテンシが大きいストレージ（一部のAndroid等）では
-    // 「1チャンク読んで→送り→次を読む」の直列待ちが速度の天井になるため
-    const PIPE = 4;
-    let nextStart = 0;
-    const takeRead = () => {
-      if (nextStart >= file.size) return null;
-      const start = nextStart;
-      nextStart = Math.min(start + CHUNK, file.size);
-      return file.slice(start, nextStart).arrayBuffer().catch((err) => err);
-    };
-    const pending = [];
-    while (pending.length < PIPE) {
-      const p = takeRead();
-      if (!p) break;
-      pending.push(p);
-    }
-
-    let offset = 0;
-    try {
-      while (pending.length) {
-        if (!conn.open) throw new Error('切断されました');
-        const buf = await pending.shift();
-        if (buf instanceof Error) throw buf;
-        if (conn.dataChannel && conn.dataChannel.bufferedAmount > BUFFER_HIGH) await waitBufferDrain(conn);
-        conn.send(buf);
-        offset += buf.byteLength;
-        const np = takeRead();
-        if (np) pending.push(np);
-        if (onChunk) onChunk(offset, buf.byteLength);
-      }
-    } finally {
-      pending.forEach((p) => p && p.catch(() => {}));
-    }
-  }
-
-  async function sendFile(conn, file) {
-    const metaId = uid();
-    const entry = addTransfer('send', file.name, file.size);
-    setEntryStatus(entry, '承認待ち…');
-    beginTransfer();
-
-    try {
-      conn.send({ t: 'meta', id: metaId, name: file.name, size: file.size, mime: file.type || 'application/octet-stream' });
-      const accepted = await waitForAccept(conn, metaId);
-      if (!conn.open) return failEntry(entry, '切断されました');
-      if (!accepted) return failEntry(entry, '拒否されました');
-      setEntryStatus(entry, '送信中…');
-      const startedAt = Date.now();
-      await streamFile(conn, entry, file, (offset) => {
-        updateEntryProgress(entry, offset);
-        rateStatus(entry, '送信中…', offset, startedAt);
-      });
-      conn.send({ t: 'end', id: metaId });
-      setEntryStatus(entry, '完了');
-      markEntry(entry, 'done');
-    } catch (err) {
-      console.error(err);
-      failEntry(entry, err.message || '送信エラー');
-    } finally {
-      endTransfer();
-    }
-  }
-
-  async function sendFolder(conn, name, entries) {
-    const totalSize = entries.reduce((s, e) => s + e.file.size, 0);
-    const folderId = uid();
-    const entry = addTransfer('send', '📁 ' + name, totalSize);
-    setEntryStatus(entry, '承認待ち…（' + entries.length + ' 個のファイル）');
-    beginTransfer();
-
-    try {
-      conn.send({ t: 'folder-start', id: folderId, name, count: entries.length, size: totalSize });
-      const accepted = await waitForAccept(conn, folderId);
-      if (!conn.open) return failEntry(entry, '切断されました');
-      if (!accepted) return failEntry(entry, '拒否されました');
-
-      const startedAt = Date.now();
-      let sent = 0;
-      let done = 0;
-      for (const { file, path } of entries) {
-        if (!conn.open) return failEntry(entry, '切断されました');
-        const metaId = uid();
-        conn.send({ t: 'meta', id: metaId, folderId, path, name: file.name, size: file.size, mime: file.type || 'application/octet-stream' });
-        await streamFile(conn, entry, file, (offset, chunkLen) => {
-          sent += chunkLen;
-          updateEntryProgress(entry, sent);
-          rateStatus(entry, '送信中…（' + (done + 1) + '/' + entries.length + '）', sent, startedAt);
-        });
-        conn.send({ t: 'end', id: metaId });
-        done++;
-        setEntryStatus(entry, '送信中…（' + done + '/' + entries.length + '）');
-      }
-      conn.send({ t: 'folder-end', id: folderId });
-      setEntryStatus(entry, '完了（' + done + ' 個のファイル）');
-      markEntry(entry, 'done');
-    } catch (err) {
-      console.error(err);
-      failEntry(entry, err.message || '送信エラー');
-    } finally {
-      endTransfer();
-    }
-  }
-
-  // ---------- ZIP（無圧縮ストア） ----------
-  // 複数ファイル/フォルダを1つのZIPに梱包し、単一ファイルとしてストリーミング送信する。
-  // 圧縮しない（STORE）ため速度優先。受信側は通常の単一ファイル受信のまま動く。
-
-  const CRC_TABLE = (() => {
-    const t = new Uint32Array(256);
-    for (let n = 0; n < 256; n++) {
-      let c = n;
-      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-      t[n] = c >>> 0;
-    }
-    return t;
-  })();
-
-  function crc32(bytes, prev) {
-    let c = ((prev || 0) ^ 0xFFFFFFFF) >>> 0;
-    for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
-    return (c ^ 0xFFFFFFFF) >>> 0;
-  }
-
-  function dosDateTime(d) {
-    const year = Math.max(1980, d.getFullYear());
-    const time = (d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2);
-    const date = (((year - 1980) & 0x7F) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
-    return { time, date };
-  }
-
-  function zipPath(path, fallback) {
-    const p = String(path || fallback || 'file').replace(/\\/g, '/').split('/').filter(Boolean).join('/');
-    return p || String(fallback || 'file');
-  }
-
-  function pickZipName(entries) {
-    const tops = new Set();
-    let onlyFolder = true;
-    for (const e of entries) {
-      if (e.path && e.path.includes('/')) tops.add(e.path.split('/')[0]);
-      else onlyFolder = false;
-    }
-    if (onlyFolder && tops.size === 1) return [...tops][0] + '.zip';
-    const d = new Date();
-    const p2 = (n) => String(n).padStart(2, '0');
-    return 'transfer-' + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate())
-      + '-' + p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds()) + '.zip';
-  }
-
-  function buildLocalHeader(nameBytes, crc, size, mtime) {
-    const zip64 = size > 0xFFFFFFFE;
-    const extraLen = zip64 ? 20 : 0;
-    const buf = new ArrayBuffer(30 + nameBytes.length + extraLen);
-    const dv = new DataView(buf);
-    const u8 = new Uint8Array(buf);
-    let o = 0;
-    dv.setUint32(o, 0x04034b50, true); o += 4;
-    dv.setUint16(o, zip64 ? 45 : 20, true); o += 2;
-    dv.setUint16(o, 0x0800, true); o += 2; // UTF-8 ファイル名フラグ
-    dv.setUint16(o, 0, true); o += 2;      // method: store
-    const dt = dosDateTime(mtime);
-    dv.setUint16(o, dt.time, true); o += 2;
-    dv.setUint16(o, dt.date, true); o += 2;
-    dv.setUint32(o, crc, true); o += 4;
-    dv.setUint32(o, zip64 ? 0xFFFFFFFF : size, true); o += 4;
-    dv.setUint32(o, zip64 ? 0xFFFFFFFF : size, true); o += 4;
-    dv.setUint16(o, nameBytes.length, true); o += 2;
-    dv.setUint16(o, extraLen, true); o += 2;
-    u8.set(nameBytes, o); o += nameBytes.length;
-    if (zip64) {
-      dv.setUint16(o, 0x0001, true); o += 2;
-      dv.setUint16(o, 16, true); o += 2;
-      dv.setBigUint64(o, BigInt(size), true); o += 8;
-      dv.setBigUint64(o, BigInt(size), true); o += 8;
-    }
-    return buf;
-  }
-
-  // データ記述子（bit 3）方式: CRCはデータ送信後に記述子で書く（受信側梱包用）
-  function buildLocalHeaderStream(nameBytes, size, mtime) {
-    const zip64 = size > 0xFFFFFFFE;
-    const extraLen = zip64 ? 20 : 0;
-    const buf = new ArrayBuffer(30 + nameBytes.length + extraLen);
-    const dv = new DataView(buf);
-    const u8 = new Uint8Array(buf);
-    let o = 0;
-    dv.setUint32(o, 0x04034b50, true); o += 4;
-    dv.setUint16(o, zip64 ? 45 : 20, true); o += 2;
-    dv.setUint16(o, 0x0808, true); o += 2; // bit3（データ記述子）+ UTF-8
-    dv.setUint16(o, 0, true); o += 2;      // method: store
-    const dt = dosDateTime(mtime);
-    dv.setUint16(o, dt.time, true); o += 2;
-    dv.setUint16(o, dt.date, true); o += 2;
-    dv.setUint32(o, 0, true); o += 4; // crc は記述子側
-    dv.setUint32(o, zip64 ? 0xFFFFFFFF : size, true); o += 4;
-    dv.setUint32(o, zip64 ? 0xFFFFFFFF : size, true); o += 4;
-    dv.setUint16(o, nameBytes.length, true); o += 2;
-    dv.setUint16(o, extraLen, true); o += 2;
-    u8.set(nameBytes, o); o += nameBytes.length;
-    if (zip64) {
-      dv.setUint16(o, 0x0001, true); o += 2;
-      dv.setUint16(o, 16, true); o += 2;
-      dv.setBigUint64(o, BigInt(size), true); o += 8;
-      dv.setBigUint64(o, BigInt(size), true); o += 8;
-    }
-    return buf;
-  }
-
-  function buildDataDescriptor(crc, size) {
-    const zip64 = size > 0xFFFFFFFE;
-    const buf = new ArrayBuffer(zip64 ? 24 : 16);
-    const dv = new DataView(buf);
-    let o = 0;
-    dv.setUint32(o, 0x08074b50, true); o += 4;
-    dv.setUint32(o, crc, true); o += 4;
-    if (zip64) {
-      dv.setBigUint64(o, BigInt(size), true); o += 8;
-      dv.setBigUint64(o, BigInt(size), true); o += 8;
-    } else {
-      dv.setUint32(o, size, true); o += 4;
-      dv.setUint32(o, size, true); o += 4;
-    }
-    return buf;
-  }
-
-  function buildCentralRecord(rec) {
-    const zip64Size = rec.size > 0xFFFFFFFE;
-    const zip64Offset = rec.offset > 0xFFFFFFFE;
-    const vals = [];
-    if (zip64Size) vals.push(rec.size, rec.size);
-    if (zip64Offset) vals.push(rec.offset);
-    const extra = new Uint8Array(vals.length ? 4 + 8 * vals.length : 0);
-    if (vals.length) {
-      const edv = new DataView(extra.buffer);
-      edv.setUint16(0, 0x0001, true);
-      edv.setUint16(2, 8 * vals.length, true);
-      vals.forEach((v, i) => edv.setBigUint64(4 + i * 8, BigInt(v), true));
-    }
-    const zip64 = vals.length > 0;
-    const buf = new ArrayBuffer(46 + rec.nameBytes.length + extra.length);
-    const dv = new DataView(buf);
-    const u8 = new Uint8Array(buf);
-    let o = 0;
-    dv.setUint32(o, 0x02014b50, true); o += 4;
-    dv.setUint16(o, zip64 ? 45 : 20, true); o += 2;
-    dv.setUint16(o, zip64 ? 45 : 20, true); o += 2;
-    dv.setUint16(o, 0x0800, true); o += 2;
-    dv.setUint16(o, 0, true); o += 2;
-    dv.setUint16(o, rec.time, true); o += 2;
-    dv.setUint16(o, rec.date, true); o += 2;
-    dv.setUint32(o, rec.crc, true); o += 4;
-    dv.setUint32(o, zip64Size ? 0xFFFFFFFF : rec.size, true); o += 4;
-    dv.setUint32(o, zip64Size ? 0xFFFFFFFF : rec.size, true); o += 4;
-    dv.setUint16(o, rec.nameBytes.length, true); o += 2;
-    dv.setUint16(o, extra.length, true); o += 2;
-    dv.setUint16(o, 0, true); o += 2;
-    dv.setUint16(o, 0, true); o += 2;
-    dv.setUint16(o, 0, true); o += 2;
-    dv.setUint32(o, 0, true); o += 4;
-    dv.setUint32(o, zip64Offset ? 0xFFFFFFFF : rec.offset, true); o += 4;
-    u8.set(rec.nameBytes, o); o += rec.nameBytes.length;
-    u8.set(extra, o);
-    return buf;
-  }
-
-  function buildArchiveTail(records, cdOffset) {
-    const cdParts = records.map(buildCentralRecord);
-    const cdSize = cdParts.reduce((s, b) => s + b.byteLength, 0);
-    const count = records.length;
-    const zip64 = count > 0xFFFF || cdSize > 0xFFFFFFFE || cdOffset > 0xFFFFFFFE;
-    const parts = cdParts.slice();
-    if (zip64) {
-      const z = new ArrayBuffer(56);
-      const zdv = new DataView(z);
-      zdv.setUint32(0, 0x06064b50, true);
-      zdv.setBigUint64(4, 44n, true);
-      zdv.setUint16(12, 45, true);
-      zdv.setUint16(14, 45, true);
-      zdv.setBigUint64(24, BigInt(count), true);
-      zdv.setBigUint64(32, BigInt(count), true);
-      zdv.setBigUint64(40, BigInt(cdSize), true);
-      zdv.setBigUint64(48, BigInt(cdOffset), true);
-      parts.push(z);
-      const loc = new ArrayBuffer(20);
-      const ldv = new DataView(loc);
-      ldv.setUint32(0, 0x07064b50, true);
-      ldv.setBigUint64(8, BigInt(cdOffset + cdSize), true);
-      ldv.setUint32(16, 1, true);
-      parts.push(loc);
-    }
-    const e = new ArrayBuffer(22);
-    const edv = new DataView(e);
-    edv.setUint32(0, 0x06054b50, true);
-    edv.setUint16(8, zip64 && count > 0xFFFF ? 0xFFFF : count, true);
-    edv.setUint16(10, zip64 && count > 0xFFFF ? 0xFFFF : count, true);
-    edv.setUint32(12, cdSize > 0xFFFFFFFE ? 0xFFFFFFFF : cdSize, true);
-    edv.setUint32(16, cdOffset > 0xFFFFFFFE ? 0xFFFFFFFF : cdOffset, true);
-    parts.push(e);
-    return parts;
-  }
-
-  async function sendAsZip(conn, entries, zipName, opts) {
-    const totalSize = entries.reduce((s, e) => s + e.file.size, 0);
-    const entry = addTransfer('send', '📦 ' + zipName, totalSize);
-    setEntryStatus(entry, opts && opts.partCount > 1
-      ? '承認待ち…（パート ' + (opts.partIndex + 1) + '/' + opts.partCount + '）'
-      : '承認待ち…（' + entries.length + ' 個のファイルを1つのZIPで送信）');
-    const metaId = uid();
-    beginTransfer();
-
-    try {
-      conn.send({
-        t: 'meta', id: metaId, name: zipName, size: totalSize, mime: 'application/zip',
-        splitId: opts && opts.splitId, partIndex: opts && opts.partIndex, partCount: opts && opts.partCount,
-      });
-      const accepted = await waitForAccept(conn, metaId);
-      if (!conn.open) { failEntry(entry, '切断されました'); return 'error'; }
-      if (!accepted) { failEntry(entry, '拒否されました'); return 'rejected'; }
-
-      const enc = new TextEncoder();
-      const records = [];
-      let archivePos = 0; // アーカイブ内の現在書き込み位置
-      let work = 0;       // 進捗は (CRC読み取り + 送信) / 2
-      let wireSent = 0;   // 実送信バイト（速度表示用）
-      const sendStartedAt = Date.now();
-      let lastPing = Date.now();
-      const ping = () => { // CRC計算中でデータが流れない間も受信側の停滞判定を防ぐ
-        if (Date.now() - lastPing > 5000) { conn.send({ t: 'ping' }); lastPing = Date.now(); }
-      };
-
-      for (let i = 0; i < entries.length; i++) {
-        const { file } = entries[i];
-        const nameBytes = enc.encode(zipPath(entries[i].path, file.name));
-        const mtime = new Date(file.lastModified || Date.now());
-        if (!conn.open) { failEntry(entry, '切断されました'); return 'error'; }
-
-        setEntryStatus(entry, '準備中…（チェックサム ' + (i + 1) + '/' + entries.length + '）');
-        let crc = 0;
-        let h = 0;
-        while (h < file.size) {
-          if (!conn.open) { failEntry(entry, '切断されました'); return 'error'; }
-          const buf = new Uint8Array(await file.slice(h, Math.min(h + HASH_CHUNK, file.size)).arrayBuffer());
-          crc = crc32(buf, crc);
-          h += buf.length;
-          work += buf.length;
-          updateEntryProgress(entry, work / 2);
-          ping();
-        }
-
-        const header = buildLocalHeader(nameBytes, crc, file.size, mtime);
-        await waitBufferDrain(conn);
-        conn.send(header);
-        const recOffset = archivePos;
-        archivePos += header.byteLength;
-
-        setEntryStatus(entry, '送信中…（' + (i + 1) + '/' + entries.length + '）');
-        let o = 0;
-        while (o < file.size) {
-          if (!conn.open) { failEntry(entry, '切断されました'); return 'error'; }
-          const buf = await file.slice(o, Math.min(o + CHUNK, file.size)).arrayBuffer();
-          await waitBufferDrain(conn);
-          conn.send(buf);
-          o += buf.byteLength;
-          archivePos += buf.byteLength;
-          work += buf.byteLength;
-          updateEntryProgress(entry, work / 2);
-          wireSent += buf.byteLength;
-          rateStatus(entry, '送信中…（' + (i + 1) + '/' + entries.length + '）', wireSent, sendStartedAt);
-        }
-        const dt = dosDateTime(mtime);
-        records.push({ nameBytes, crc, size: file.size, offset: recOffset, time: dt.time, date: dt.date });
-      }
-
-      setEntryStatus(entry, '目次を書き込み中…');
-      for (const part of buildArchiveTail(records, archivePos)) {
-        await waitBufferDrain(conn);
-        conn.send(part);
-      }
-      conn.send({ t: 'end', id: metaId });
-      updateEntryProgress(entry, totalSize);
-      setEntryStatus(entry, '完了（' + entries.length + ' 個のファイルをZIPで送信）');
-      markEntry(entry, 'done');
-      return 'done';
-    } catch (err) {
-      console.error(err);
-      failEntry(entry, err.message || '送信エラー');
-      return 'error';
-    } finally {
-      endTransfer();
-    }
-  }
-
-  // 受信側梱包モード: チェックサム計算をせず生ファイルを流すだけにする。
-  // 受信側が到着データからCRCを計算し、データ記述子（bit 3）付きZIPを組み立てる
-  async function sendBundle(conn, entries, zipName, opts) {
-    const totalSize = entries.reduce((s, e) => s + e.file.size, 0);
-    const bundleId = uid();
-    const entry = addTransfer('send', '📦 ' + zipName, totalSize);
-    setEntryStatus(entry, opts && opts.partCount > 1
-      ? '承認待ち…（パート ' + (opts.partIndex + 1) + '/' + opts.partCount + '・梱包は受信側）'
-      : '承認待ち…（' + entries.length + ' 個のファイル・梱包は受信側）');
-    beginTransfer();
-
-    try {
-      conn.send({
-        t: 'bundle-start', id: bundleId, name: zipName, count: entries.length, size: totalSize,
-        splitId: opts && opts.splitId, partIndex: opts && opts.partIndex, partCount: opts && opts.partCount,
-      });
-      const accepted = await waitForAccept(conn, bundleId);
-      if (!conn.open) { failEntry(entry, '切断されました'); return 'error'; }
-      if (!accepted) { failEntry(entry, '拒否されました'); return 'rejected'; }
-
-      const startedAt = Date.now();
-      let sent = 0;
-      let done = 0;
-      for (const { file, path } of entries) {
-        if (!conn.open) { failEntry(entry, '切断されました'); return 'error'; }
-        const metaId = uid();
-        conn.send({
-          t: 'meta', id: metaId, bundleId, path: zipPath(path, file.name),
-          name: file.name, size: file.size, mtime: file.lastModified || Date.now(),
-          mime: file.type || 'application/octet-stream',
-        });
-        await streamFile(conn, entry, file, (offset, chunkLen) => {
-          sent += chunkLen;
-          updateEntryProgress(entry, sent);
-          rateStatus(entry, '送信中…（' + (done + 1) + '/' + entries.length + '）', sent, startedAt);
-        });
-        conn.send({ t: 'end', id: metaId });
-        done++;
-      }
-      conn.send({ t: 'bundle-end', id: bundleId });
-      setEntryStatus(entry, '完了（' + done + ' 個のファイル・ZIP組み立ては受信側）');
-      markEntry(entry, 'done');
-      return 'done';
-    } catch (err) {
-      console.error(err);
-      failEntry(entry, err.message || '送信エラー');
-      return 'error';
-    } finally {
-      endTransfer();
-    }
-  }
-
-  // ---------- receiving ----------
-
-  function handleData(conn, data) {
-    const now = Date.now();
-    if (conn._incoming) conn._incoming.lastChunkAt = now;
-    if (conn._folder) conn._folder.lastChunkAt = now;
-    if (data instanceof ArrayBuffer) { pushChunk(conn, data); return; }
-    if (typeof Blob !== 'undefined' && data instanceof Blob) {
-      data.arrayBuffer().then((b) => pushChunk(conn, b)).catch(() => {});
-      return;
-    }
-    if (ArrayBuffer.isView(data)) {
-      pushChunk(conn, data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
-      return;
-    }
-    if (!data || typeof data !== 'object') return;
-
-    switch (data.t) {
-      case 'folder-start': requestFolder(conn, data); break;
-      case 'bundle-start': requestBundle(conn, data); break;
-      case 'meta':
-        if (data.folderId) startFolderFile(conn, data);
-        else if (data.bundleId) startBundleFile(conn, data);
-        else requestIncoming(conn, data);
-        break;
-      case 'accept':
-      case 'reject': {
-        const pending = conn._pendingAccept;
-        if (pending && pending.metaId === data.id) {
-          conn._pendingAccept = null;
-          pending.res(data.t === 'accept');
-        }
-        break;
-      }
-      case 'end': endCurrentFile(conn, data); break;
-      case 'folder-end': endFolder(conn, data); break;
-      case 'bundle-end': endBundle(conn, data); break;
-      case 'part-ack': conn._partAck = data; break;
-    }
-  }
-
-  function pushChunk(conn, buf) {
-    const inc = conn._incoming;
-    if (!inc || !buf) return;
-    inc.lastChunkAt = Date.now();
-
-    if (inc.bundle) {
-      // 受信側梱包: 到着チャンクからCRCを計算しつつ、そのままZIP部品に積む
-      const b = conn._bundle;
-      if (!b) return;
-      inc.crc = crc32(new Uint8Array(buf), inc.crc);
-      b.parts.push(buf);
-      b.pos += buf.byteLength;
-      b.received += buf.byteLength;
-      b.lastChunkAt = Date.now();
-      updateEntryProgress(b.entry, b.received);
-      rateStatus(b.entry, '受信中…', b.received, b.startedAt);
-      return;
-    }
-
-    inc.chunks.push(buf);
-    inc.received += buf.byteLength;
-    if (inc.isFolderFile && conn._folder) {
-      conn._folder.received += buf.byteLength;
-      conn._folder.lastChunkAt = Date.now();
-      updateEntryProgress(conn._folder.entry, conn._folder.received);
-      rateStatus(conn._folder.entry, '受信中…', conn._folder.received, conn._folder.startedAt);
-    } else {
-      updateEntryProgress(inc.entry, inc.received);
-      rateStatus(inc.entry, '受信中…', inc.received, inc.startedAt);
-    }
-  }
-
-  function startStallWatch(conn) {
-    if (conn._stallTimer) clearInterval(conn._stallTimer);
-    conn._stallTimer = setInterval(() => {
-      const inc = conn._incoming;
-      const f = conn._folder;
-      if (!inc && !f) { clearInterval(conn._stallTimer); conn._stallTimer = null; return; }
-      const last = inc ? inc.lastChunkAt : f.lastChunkAt;
-      if (last && Date.now() - last > RECV_STALL_MS) {
-        const entry = inc ? inc.entry : f.entry;
-        setEntryStatus(entry, 'データが届いていません（通信が遮断された可能性）');
-        clearInterval(conn._stallTimer);
-        conn._stallTimer = null;
-      }
-    }, 5000);
-  }
-
-  function makeActions(entry, okText, onOk) {
-    const actions = document.createElement('div');
-    actions.className = 't-actions';
-    const okBtn = document.createElement('button');
-    okBtn.className = 'ok';
-    okBtn.textContent = okText;
-    const noBtn = document.createElement('button');
-    noBtn.className = 'danger';
-    noBtn.textContent = '拒否';
-    actions.append(okBtn, noBtn);
-    entry.foot.insertBefore(actions, entry.pctEl);
-    okBtn.onclick = () => { actions.remove(); onOk(); };
-    return {
-      set onReject(fn) { noBtn.onclick = () => { actions.remove(); fn(); }; },
-    };
-  }
-
-  function requestIncoming(conn, meta) {
-    const entry = addTransfer('recv', meta.name, meta.size);
-    setEntryStatus(entry, '受信リクエスト');
-
-    const approve = () => {
-      if (!conn.open) { toast('切断されています'); return; }
-      if (meta.splitId) conn._autoSplit = meta.splitId;
-      conn._incoming = { meta, chunks: [], received: 0, entry, lastChunkAt: Date.now(), startedAt: Date.now() };
-      conn.send({ t: 'accept', id: meta.id });
-      setEntryStatus(entry, '受信中…');
-      startStallWatch(conn);
-      beginTransfer();
-    };
-    if (meta.splitId && conn._autoSplit === meta.splitId) {
-      setEntryStatus(entry, '自動受信中…（パート ' + ((meta.partIndex || 0) + 1) + '/' + (meta.partCount || '?') + '）');
-      approve();
-      return;
-    }
-    const actions = makeActions(entry, '受け取る', approve);
-    actions.onReject = () => {
-      conn.send({ t: 'reject', id: meta.id });
-      setEntryStatus(entry, '拒否しました');
-      markEntry(entry, 'failed');
-    };
-  }
-
-  function requestFolder(conn, fs) {
-    const entry = addTransfer('recv', '📁 ' + fs.name, fs.size);
-    setEntryStatus(entry, '受信リクエスト（' + fs.count + ' 個のファイル）');
-
-    const actions = makeActions(entry, '受け取る', () => {
-      if (!conn.open) { toast('切断されています'); return; }
-      const filesBox = document.createElement('div');
-      filesBox.className = 't-files';
-      entry.el.appendChild(filesBox);
-      conn._folder = {
-        id: fs.id, name: fs.name, count: fs.count, size: fs.size,
-        received: 0, filesDone: 0, entry, filesBox, lastChunkAt: Date.now(), startedAt: Date.now(),
-      };
-      conn.send({ t: 'accept', id: fs.id });
-      setEntryStatus(entry, '受信中…（0/' + fs.count + '）');
-      startStallWatch(conn);
-      beginTransfer();
-    });
-    actions.onReject = () => {
-      conn.send({ t: 'reject', id: fs.id });
-      setEntryStatus(entry, '拒否しました');
-      markEntry(entry, 'failed');
-    };
-  }
-
-  function startFolderFile(conn, meta) {
-    const f = conn._folder;
-    if (!f || f.id !== meta.folderId) return;
-    conn._incoming = { meta, chunks: [], received: 0, isFolderFile: true, entry: f.entry, lastChunkAt: Date.now() };
-  }
-
-  function addSaveLink(container, url, label, downloadName, big, onSaved) {
-    const a = document.createElement('a');
-    a.className = 'save-btn' + (big ? '' : ' small');
-    a.href = url;
-    a.download = safeName(downloadName);
-    a.textContent = big ? 'ファイルを保存' : label;
-    a.title = label;
-    a.addEventListener('click', () => {
-      if (onSaved) { try { onSaved(); } catch (_) {} }
-      // ダウンロードが始まった頃合いでBlobメモリを解放（大量転送の分割パート対策）
-      setTimeout(() => URL.revokeObjectURL(url), 120 * 1000);
-    });
-    if (big && container.classList.contains('t-foot')) {
-      container.insertBefore(a, container.querySelector('.t-pct'));
-    } else {
-      container.appendChild(a);
-    }
-  }
-
-  function endCurrentFile(conn, data) {
-    const inc = conn._incoming;
-    if (!inc || inc.meta.id !== data.id) return;
-    conn._incoming = null;
-
-    if (inc.bundle) {
-      const b = conn._bundle;
-      if (!b) return;
-      const desc = buildDataDescriptor(inc.crc, inc.meta.size);
-      b.parts.push(desc);
-      b.pos += desc.byteLength;
-      b.filesDone++;
-      b.lastChunkAt = Date.now();
-      b.records.push({
-        nameBytes: inc.nameBytes, crc: inc.crc, size: inc.meta.size,
-        offset: inc.recOffset, time: inc.dt.time, date: inc.dt.date,
-      });
-      setEntryStatus(b.entry, '受信中…（' + b.filesDone + '/' + b.count + '）');
-      return;
-    }
-
-    const blob = new Blob(inc.chunks, { type: inc.meta.mime });
-    const url = URL.createObjectURL(blob);
-
-    if (inc.isFolderFile) {
-      const f = conn._folder;
-      if (!f) return;
-      f.filesDone++;
-      f.lastChunkAt = Date.now();
-      setEntryStatus(f.entry, '受信中…（' + f.filesDone + '/' + f.count + '）');
-      addSaveLink(f.filesBox, url, inc.meta.path || inc.meta.name, inc.meta.path || inc.meta.name, false);
-    } else {
-      updateEntryProgress(inc.entry, inc.meta.size);
-      setEntryStatus(inc.entry, '完了');
-      markEntry(inc.entry, 'done');
-      addSaveLink(inc.entry.foot, url, inc.meta.name, inc.meta.name, true, () => {
-        if (inc.meta.splitId != null && conn.open) {
-          try { conn.send({ t: 'part-ack', splitId: inc.meta.splitId, partIndex: inc.meta.partIndex }); } catch (_) {}
-        }
-      });
-      endTransfer();
-    }
-  }
-
-  function endFolder(conn, data) {
-    const f = conn._folder;
-    if (!f || f.id !== data.id) return;
-    conn._folder = null;
-    updateEntryProgress(f.entry, f.size);
-    setEntryStatus(f.entry, '完了（' + f.filesDone + ' 個のファイル）');
-    markEntry(f.entry, 'done');
-    endTransfer();
-  }
-
-  // ---------- receiving: bundle（受信側でZIP組み立て） ----------
-
-  function requestBundle(conn, bs) {
-    const entry = addTransfer('recv', '📦 ' + bs.name, bs.size);
-    setEntryStatus(entry, '受信リクエスト（' + bs.count + ' 個のファイル → この端末でZIPに組み立て）');
-
-    const approve = () => {
-      if (!conn.open) { toast('切断されています'); return; }
-      if (bs.splitId) conn._autoSplit = bs.splitId;
-      conn._bundle = {
-        id: bs.id, name: bs.name, count: bs.count, size: bs.size,
-        splitId: bs.splitId, partIndex: bs.partIndex,
-        received: 0, filesDone: 0, entry, parts: [], pos: 0, records: [],
-        lastChunkAt: Date.now(), startedAt: Date.now(),
-      };
-      conn.send({ t: 'accept', id: bs.id });
-      setEntryStatus(entry, '受信中…（0/' + bs.count + '）');
-      startStallWatch(conn);
-      beginTransfer();
-    };
-    if (bs.splitId && conn._autoSplit === bs.splitId) {
-      setEntryStatus(entry, '自動受信中…（パート ' + ((bs.partIndex || 0) + 1) + '/' + (bs.partCount || '?') + '）');
-      approve();
-      return;
-    }
-    const actions = makeActions(entry, '受け取る', approve);
-    actions.onReject = () => {
-      conn.send({ t: 'reject', id: bs.id });
-      setEntryStatus(entry, '拒否しました');
-      markEntry(entry, 'failed');
-    };
-  }
-
-  function startBundleFile(conn, meta) {
-    const b = conn._bundle;
-    if (!b || b.id !== meta.bundleId) return;
-    const nameBytes = new TextEncoder().encode(zipPath(meta.path, meta.name));
-    const mtime = new Date(meta.mtime || Date.now());
-    const header = buildLocalHeaderStream(nameBytes, meta.size, mtime);
-    b.parts.push(header);
-    const recOffset = b.pos;
-    b.pos += header.byteLength;
-    conn._incoming = {
-      meta, bundle: true, crc: 0, nameBytes, recOffset, dt: dosDateTime(mtime),
-      entry: b.entry, lastChunkAt: Date.now(),
-    };
-  }
-
-  function endBundle(conn, data) {
-    const b = conn._bundle;
-    if (!b || b.id !== data.id) return;
-    conn._bundle = null;
-    conn._incoming = null;
-    for (const part of buildArchiveTail(b.records, b.pos)) b.parts.push(part);
-    const blob = new Blob(b.parts, { type: 'application/zip' });
-    b.parts.length = 0;
-    const url = URL.createObjectURL(blob);
-    updateEntryProgress(b.entry, b.size);
-    setEntryStatus(b.entry, '完了（' + b.filesDone + ' 個のファイル → ZIP）');
-    markEntry(b.entry, 'done');
-    addSaveLink(b.entry.foot, url, b.name, b.name, true, () => {
-      if (b.splitId != null && conn.open) {
-        try { conn.send({ t: 'part-ack', splitId: b.splitId, partIndex: b.partIndex }); } catch (_) {}
-      }
-    });
-    endTransfer();
-  }
-
-  // ---------- transfer list UI ----------
-
-  function addTransfer(dir, name, size) {
-    const empty = transferListEl.querySelector('.empty');
-    if (empty) empty.remove();
-
-    const li = document.createElement('li');
-    li.className = 'transfer';
-
-    const head = document.createElement('div');
-    head.className = 't-head';
-    const dirEl = document.createElement('span');
-    dirEl.className = 'dir ' + dir;
-    dirEl.textContent = dir === 'send' ? '送信' : '受信';
-    const nameEl = document.createElement('span');
-    nameEl.className = 't-name';
-    nameEl.textContent = name;
-    const sizeEl = document.createElement('span');
-    sizeEl.className = 't-size';
-    sizeEl.textContent = fmtBytes(size);
-    head.append(dirEl, nameEl, sizeEl);
-
-    const bar = document.createElement('div');
-    bar.className = 't-bar';
-    const fill = document.createElement('div');
-    fill.className = 't-fill';
-    bar.appendChild(fill);
-
-    const foot = document.createElement('div');
-    foot.className = 't-foot';
-    const statusEl2 = document.createElement('span');
-    statusEl2.className = 't-status';
-    const pctEl = document.createElement('span');
-    pctEl.className = 't-pct';
-    pctEl.textContent = '0%';
-    foot.append(statusEl2, pctEl);
-
-    li.append(head, bar, foot);
-    transferListEl.prepend(li);
-
-    return { el: li, fill, statusEl: statusEl2, pctEl, foot, size, lastPct: -1 };
-  }
-
-  function updateEntryProgress(entry, bytes) {
-    const pct = entry.size > 0 ? Math.min(100, Math.floor((bytes / entry.size) * 100)) : 100;
-    if (pct === entry.lastPct) return;
-    entry.lastPct = pct;
-    entry.fill.style.width = pct + '%';
-    entry.pctEl.textContent = pct + '%';
-  }
-
-  function setEntryStatus(entry, text) { entry.statusEl.textContent = text; }
-  function markEntry(entry, cls) { entry.el.classList.add(cls); }
-
-  function rateStatus(entry, base, sent, startedAt) {
-    const now = Date.now();
-    if (entry.lastRateAt && now - entry.lastRateAt < 500) return;
-    entry.lastRateAt = now;
-    const secs = Math.max(0.2, (now - startedAt) / 1000);
-    setEntryStatus(entry, base + '（' + fmtBytes(sent / secs) + '/s）');
-  }
-
-  // ---------- events ----------
-
-  copyBtn.onclick = async () => {
-    const id = myIdEl.textContent;
-    if (!id || id === '------') return;
-    try {
-      await navigator.clipboard.writeText(id);
-      toast('コピーしました');
-    } catch (_) {
-      const ta = document.createElement('textarea');
-      ta.value = id;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      ta.remove();
-      toast('コピーしました');
-    }
-  };
-
-  connectBtn.onclick = () => connectTo(peerInput.value);
-  peerInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') connectTo(peerInput.value); });
-
-  dropzone.addEventListener('click', () => fileInput.click());
-  $('#file-btn').onclick = () => fileInput.click();
-  $('#folder-btn').onclick = () => folderInput.click();
-
-  fileInput.addEventListener('change', () => {
-    const entries = Array.from(fileInput.files).map((f) => ({ file: f, path: f.name }));
-    fileInput.value = '';
-    sendSelected(entries);
-  });
-  folderInput.addEventListener('change', () => {
-    const entries = Array.from(folderInput.files).map((f) => ({ file: f, path: f.webkitRelativePath || f.name }));
-    folderInput.value = '';
-    sendSelected(entries);
-  });
-
-  ['dragenter', 'dragover'].forEach((ev) =>
-    dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.add('over'); }));
-  ['dragleave', 'drop'].forEach((ev) =>
-    dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.remove('over'); }));
-  dropzone.addEventListener('drop', async (e) => {
-    const entries = await entriesFromDataTransfer(e.dataTransfer);
-    sendSelected(entries);
-  });
-
-  try { zipOpt.checked = localStorage.getItem('p2p-zip-bundle') !== '0'; } catch (_) {}
-  try { if (localStorage.getItem('p2p-zip-side') === 'receiver') zipSide.value = 'receiver'; } catch (_) {}
-  const syncZipSide = () => { zipSide.parentElement.style.display = zipOpt.checked ? '' : 'none'; };
-  syncZipSide();
-  zipOpt.addEventListener('change', () => {
-    try { localStorage.setItem('p2p-zip-bundle', zipOpt.checked ? '1' : '0'); } catch (_) {}
-    syncZipSide();
-  });
-  zipSide.addEventListener('change', () => {
-    try { localStorage.setItem('p2p-zip-side', zipSide.value); } catch (_) {}
-  });
-
-  window.addEventListener('beforeunload', () => { if (peer) peer.destroy(); });
-
-  // ---------- init ----------
-
-  const params = new URLSearchParams(location.search);
-  const preset = params.get('peer');
-  let presetUsed = false;
-  if (preset) peerInput.value = preset;
-
-  // 診断用: ?debug=1 で開くとコンソールから送信を再現できる
-  if (params.get('debug') === '1') {
-    window.__p2p = {
-      sendEntries: (entries) => sendSelected(entries),
-      state: () => ({ connections: [...connections.keys()], selected: selectedConn && selectedConn.peer }),
-    };
-  }
-
-  if (typeof Peer === 'undefined') {
-    setStatus('PeerJS を読み込めません（要ネット接続）', 'err');
-  } else {
-    initPeer(randomId());
-  }
-})();
-</script>
+<div id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
