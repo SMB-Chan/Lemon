@@ -74,8 +74,10 @@ for (const token of [
   'tests/live-browser-smoke.mjs',
   'tests/live-auth-zip-smoke.mjs',
   'tests/live-direct-save-smoke.mjs',
+  'tests/live-direct-interrupt-smoke.mjs',
   'Run wrong-secret and ZIP smoke',
   'Run direct-save flow-control smoke',
+  'Run direct-save interruption smoke',
   'LEMON_BUILD_WAIT_ATTEMPTS',
   "'60'",
 ]) {
@@ -177,11 +179,30 @@ for (const token of [
 }
 assert.doesNotMatch(directSmoke, /console\.log\([^\n]*invite/i, 'direct-save smoke must not log authenticated invites');
 
+const interruptSmoke = read('tests/live-direct-interrupt-smoke.mjs');
+for (const token of [
+  '32 * 1024 * 1024',
+  'first direct writable write before interruption',
+  'disconnect button missing',
+  'direct-save abort after forced disconnect',
+  'interrupted direct-save was incorrectly marked complete',
+  'interrupted direct-save incorrectly committed writable',
+  'interrupted direct-save did not abort writable',
+  'interrupted direct-save incorrectly created a Blob download URL',
+  'sender state cleanup after forced disconnect',
+  'receiver state cleanup after forced disconnect',
+  'interrupted receiver exposed a save link',
+]) {
+  assert.ok(interruptSmoke.includes(token), `live direct-interrupt verification invariant missing: ${token}`);
+}
+assert.doesNotMatch(interruptSmoke, /console\.log\([^\n]*invite/i, 'direct-interrupt smoke must not log authenticated invites');
+
 const pkg = JSON.parse(read('package.json'));
-assert.equal(pkg.version, '1.3.7', 'Pages/browser synchronization release version must be 1.3.7');
+assert.equal(pkg.version, '1.3.8', 'direct-save interruption smoke release version must be 1.3.8');
 assert.match(pkg.scripts.test, /node --check tests\/live-pages\.mjs/, 'normal CI must syntax-check the live Pages smoke script');
 assert.match(pkg.scripts.test, /node --check tests\/live-browser-smoke\.mjs/, 'normal CI must syntax-check the live browser smoke script');
 assert.match(pkg.scripts.test, /node --check tests\/live-auth-zip-smoke\.mjs/, 'normal CI must syntax-check the live auth/ZIP smoke script');
 assert.match(pkg.scripts.test, /node --check tests\/live-direct-save-smoke\.mjs/, 'normal CI must syntax-check the live direct-save smoke script');
+assert.match(pkg.scripts.test, /node --check tests\/live-direct-interrupt-smoke\.mjs/, 'normal CI must syntax-check the live direct-interrupt smoke script');
 
 console.log('Lemon stability/security tests passed');
