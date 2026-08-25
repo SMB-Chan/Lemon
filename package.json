@@ -3,7 +3,7 @@
   "version": "1.2.0",
   "private": true,
   "scripts": {
-    "test": "node tests/smoke.cjs"
+    "test": "node tests/smoke.cjs && node tests/auth-guard-smoke.cjs"
   },
   "engines": {
     "node": ">=18"
