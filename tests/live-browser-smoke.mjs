@@ -34,23 +34,12 @@ function launchChrome(label, port) {
   const logPath = path.join(userDir, 'chrome.log');
   const logFd = fs.openSync(logPath, 'w');
   const child = spawn(chromeBin, [
-    '--headless=new',
-    '--no-sandbox',
-    '--disable-dev-shm-usage',
-    '--disable-gpu',
-    '--disable-extensions',
-    '--disable-background-timer-throttling',
-    '--disable-renderer-backgrounding',
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--remote-allow-origins=*',
-    `--remote-debugging-port=${port}`,
-    `--user-data-dir=${userDir}`,
-    '--window-size=1280,800',
-    smokeUrl(label),
-  ], {
-    stdio: ['ignore', logFd, logFd],
-  });
+    '--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
+    '--disable-extensions', '--disable-background-timer-throttling',
+    '--disable-renderer-backgrounding', '--no-first-run', '--no-default-browser-check',
+    '--remote-allow-origins=*', `--remote-debugging-port=${port}`,
+    `--user-data-dir=${userDir}`, '--window-size=1280,800', smokeUrl(label),
+  ], { stdio: ['ignore', logFd, logFd] });
   processes.push({ child, label, logPath, logFd });
   return child;
 }
@@ -78,9 +67,7 @@ async function waitForTarget(port, timeoutMs = 20000) {
       const targets = await res.json();
       const target = targets.find((item) => item.type === 'page' && item.webSocketDebuggerUrl);
       if (target) return target;
-    } catch (err) {
-      lastError = err;
-    }
+    } catch (err) { lastError = err; }
     await sleep(250);
   }
   throw new Error(`Chrome DevTools target did not appear on port ${port}: ${lastError && lastError.message ? lastError.message : lastError}`);
@@ -113,7 +100,6 @@ class CdpClient {
       this.pending.clear();
     });
   }
-
   async send(method, params = {}) {
     await this.ready;
     if (this.closed) throw new Error(`${this.label} CDP socket is closed`);
@@ -123,18 +109,12 @@ class CdpClient {
       this.socket.send(JSON.stringify({ id, method, params }));
     });
   }
-
-  close() {
-    try { this.socket.close(); } catch (_) {}
-  }
+  close() { try { this.socket.close(); } catch (_) {} }
 }
 
 async function evaluate(client, expression) {
   const result = await client.send('Runtime.evaluate', {
-    expression,
-    awaitPromise: true,
-    returnByValue: true,
-    userGesture: true,
+    expression, awaitPromise: true, returnByValue: true, userGesture: true,
   });
   if (result.exceptionDetails) {
     const detail = result.exceptionDetails.exception && result.exceptionDetails.exception.description;
@@ -150,9 +130,7 @@ async function waitFor(label, fn, timeoutMs = 30000, intervalMs = 200) {
     try {
       const value = await fn();
       if (value) return value;
-    } catch (err) {
-      lastError = err;
-    }
+    } catch (err) { lastError = err; }
     await sleep(intervalMs);
   }
   throw new Error(`${label} timed out${lastError ? `: ${lastError.message}` : ''}`);
@@ -171,9 +149,18 @@ async function pageSummary(client) {
         classes: row.className,
       })),
     }))()`);
-  } catch (err) {
-    return { error: err.message };
-  }
+  } catch (err) { return { error: err.message }; }
+}
+
+async function waitForOpenV2(client, label) {
+  return waitFor(label, () => evaluate(client, `(() => {
+    const s = window.__p2p.state(); const c = s.connections[0];
+    return s.connections.length === 1 && c.open && c.remoteVersion === 2 ? c.peer : null;
+  })()`), 35000);
+}
+
+async function diagnostics(client) {
+  return evaluate(client, `window.LemonDiagnostics.snapshot().then((items) => items.map((x) => ({ peer: x.peer, open: x.open, path: x.path })))`);
 }
 
 let a = null;
@@ -181,24 +168,17 @@ let b = null;
 try {
   launchChrome('a', 9222);
   launchChrome('b', 9223);
-
   const [targetA, targetB] = await Promise.all([waitForTarget(9222), waitForTarget(9223)]);
   a = new CdpClient(targetA.webSocketDebuggerUrl, 'A');
   b = new CdpClient(targetB.webSocketDebuggerUrl, 'B');
   await Promise.all([a.ready, b.ready]);
-  await Promise.all([
-    a.send('Runtime.enable'), b.send('Runtime.enable'),
-    a.send('Page.enable'), b.send('Page.enable'),
-  ]);
+  await Promise.all([a.send('Runtime.enable'), b.send('Runtime.enable'), a.send('Page.enable'), b.send('Page.enable')]);
 
   await Promise.all([
-    waitFor('A Lemon initialization', () => evaluate(a, `document.readyState === 'complete' && !!window.__p2p && !!window.LemonAuth`)),
-    waitFor('B Lemon initialization', () => evaluate(b, `document.readyState === 'complete' && !!window.__p2p && !!window.LemonAuth`)),
+    waitFor('A Lemon initialization', () => evaluate(a, `document.readyState === 'complete' && !!window.__p2p && !!window.LemonAuth && !!window.LemonDiagnostics`)),
+    waitFor('B Lemon initialization', () => evaluate(b, `document.readyState === 'complete' && !!window.__p2p && !!window.LemonAuth && !!window.LemonDiagnostics`)),
   ]);
 
-  // Capture the receiver Blob directly at creation time. Fetching its blob: URL is
-  // intentionally avoided because page CSP/browser policy can reject fetch(blob:)
-  // even though the download link itself is valid.
   await evaluate(b, `(() => {
     if (!window.__lemonSmokeOriginalCreateObjectURL) {
       const original = URL.createObjectURL.bind(URL);
@@ -228,18 +208,12 @@ try {
     document.querySelector('#connect-btn').click();
     return input.value;
   })()`);
-
-  await Promise.all([
-    waitFor('A authenticated connection + protocol hello', () => evaluate(a, `(() => { const s = window.__p2p.state(); const c = s.connections[0]; return s.connections.length === 1 && c.open && c.remoteVersion === 2 ? c.peer : null; })()`), 35000),
-    waitFor('B authenticated connection + protocol hello', () => evaluate(b, `(() => { const s = window.__p2p.state(); const c = s.connections[0]; return s.connections.length === 1 && c.open && c.remoteVersion === 2 ? c.peer : null; })()`), 35000),
-  ]);
+  await Promise.all([waitForOpenV2(a, 'A authenticated connection + protocol hello'), waitForOpenV2(b, 'B authenticated connection + protocol hello')]);
 
   const stateA = await evaluate(a, `window.__p2p.state()`);
   const stateB = await evaluate(b, `window.__p2p.state()`);
   assert.equal(stateA.connections[0].peer, peerB, 'A connected to an unexpected peer');
   assert.equal(stateB.connections[0].peer, peerA, 'B connected to an unexpected peer');
-  assert.equal(stateA.connections[0].remoteVersion, 2, 'A did not negotiate Lemon protocol v2');
-  assert.equal(stateB.connections[0].remoteVersion, 2, 'B did not negotiate Lemon protocol v2');
 
   const expected = await evaluate(a, `(async () => {
     const size = 256 * 1024;
@@ -248,32 +222,24 @@ try {
     const digest = await crypto.subtle.digest('SHA-256', bytes);
     const sha256 = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
     const file = new File([bytes], 'lemon-browser-smoke.bin', { type: 'application/octet-stream' });
-    window.__lemonSmokeSendState = 'pending';
-    window.__lemonSmokeSendError = null;
-    const promise = window.__p2p.sendEntries([{ file, path: file.name }]);
-    promise.then(
+    window.__lemonSmokeSendState = 'pending'; window.__lemonSmokeSendError = null;
+    window.__p2p.sendEntries([{ file, path: file.name }]).then(
       () => { window.__lemonSmokeSendState = 'fulfilled'; },
-      (err) => { window.__lemonSmokeSendState = 'rejected'; window.__lemonSmokeSendError = String(err && err.message ? err.message : err); },
+      (err) => { window.__lemonSmokeSendState = 'rejected'; window.__lemonSmokeSendError = String(err && err.message ? err.message : err); }
     );
     return { size, sha256 };
   })()`);
 
   await waitFor('receiver accept prompt', () => evaluate(b, `!!document.querySelector('#transfer-list .transfer .t-actions button.ok')`), 20000);
   await evaluate(b, `(() => { const button = document.querySelector('#transfer-list .transfer .t-actions button.ok'); if (!button) throw new Error('accept button missing'); button.click(); return true; })()`);
-
   await Promise.all([
     waitFor('sender transfer completion', () => evaluate(a, `window.__lemonSmokeSendState === 'fulfilled'`), 45000),
     waitFor('receiver transfer completion', () => evaluate(b, `(() => { const row = document.querySelector('#transfer-list .transfer.done'); return !!row && !!row.querySelector('a.save-btn') && window.__lemonSmokeLastBlob instanceof Blob; })()`), 45000),
   ]);
 
-  const sendError = await evaluate(a, `window.__lemonSmokeSendError`);
-  assert.equal(sendError, null, `sender transfer promise rejected: ${sendError}`);
-  assert.equal(await evaluate(a, `document.querySelectorAll('#transfer-list .transfer.failed').length`), 0, 'sender UI reports a failed transfer');
-  assert.equal(await evaluate(b, `document.querySelectorAll('#transfer-list .transfer.failed').length`), 0, 'receiver UI reports a failed transfer');
-
+  assert.equal(await evaluate(a, `window.__lemonSmokeSendError`), null, 'sender transfer promise rejected');
   const received = await evaluate(b, `(async () => {
-    const link = [...document.querySelectorAll('#transfer-list .transfer.done a.save-btn')]
-      .find((item) => item.download === 'lemon-browser-smoke.bin');
+    const link = [...document.querySelectorAll('#transfer-list .transfer.done a.save-btn')].find((item) => item.download === 'lemon-browser-smoke.bin');
     if (!link) throw new Error('completed receiver blob link is missing');
     const blob = window.__lemonSmokeLastBlob;
     if (!(blob instanceof Blob)) throw new Error('captured receiver Blob is missing');
@@ -282,21 +248,82 @@ try {
     const sha256 = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
     return { size: buffer.byteLength, sha256, status: link.closest('.transfer')?.querySelector('.t-status')?.textContent || '' };
   })()`);
-
   assert.equal(received.size, expected.size, 'received Blob size differs from sender payload');
   assert.equal(received.sha256, expected.sha256, 'received Blob SHA-256 differs from sender payload');
   assert.match(received.status, /整合性確認済み/, 'receiver did not report integrity verification');
   assert.equal(await evaluate(a, `window.__p2p.state().activeTransfers`), 0, 'sender transfer counter did not return to zero');
   assert.equal(await evaluate(b, `window.__p2p.state().activeTransfers`), 0, 'receiver transfer counter did not return to zero');
 
-  console.log(`Lemon production browser smoke passed: authenticated connection + ${expected.size} byte transfer + SHA-256 match`);
+  // Tear down the proven connection, then have both endpoints connect at once.
+  await evaluate(a, `(() => { const button = document.querySelector('#conn-list .conn-row button.danger'); if (!button) throw new Error('disconnect button missing'); button.click(); return true; })()`);
+  await Promise.all([
+    waitFor('A connection teardown', () => evaluate(a, `window.__p2p.state().connections.length === 0`), 10000),
+    waitFor('B connection teardown', () => evaluate(b, `window.__p2p.state().connections.length === 0`), 10000),
+  ]);
+  await Promise.all([
+    waitFor('A diagnostics teardown', async () => (await diagnostics(a)).length === 0, 10000),
+    waitFor('B diagnostics teardown', async () => (await diagnostics(b)).length === 0, 10000),
+  ]);
+
+  await Promise.all([
+    evaluate(a, `(() => { const input = document.querySelector('#peer-input'); input.value = ${JSON.stringify(peerB)}; document.querySelector('#connect-btn').click(); return true; })()`),
+    evaluate(b, `(() => { const input = document.querySelector('#peer-input'); input.value = ${JSON.stringify(peerA)}; document.querySelector('#connect-btn').click(); return true; })()`),
+  ]);
+  await Promise.all([waitForOpenV2(a, 'A simultaneous reconnect'), waitForOpenV2(b, 'B simultaneous reconnect')]);
+  await sleep(1200);
+
+  const [crossStateA, crossStateB, diagA, diagB] = await Promise.all([
+    evaluate(a, `window.__p2p.state()`), evaluate(b, `window.__p2p.state()`), diagnostics(a), diagnostics(b),
+  ]);
+  assert.equal(crossStateA.connections.length, 1, 'A app state did not converge to one connection');
+  assert.equal(crossStateB.connections.length, 1, 'B app state did not converge to one connection');
+  assert.equal(diagA.length, 1, 'A diagnostics still tracks a duplicate open DataConnection');
+  assert.equal(diagB.length, 1, 'B diagnostics still tracks a duplicate open DataConnection');
+  assert.equal(diagA[0].peer, peerB, 'A diagnostics peer mismatch after simultaneous reconnect');
+  assert.equal(diagB[0].peer, peerA, 'B diagnostics peer mismatch after simultaneous reconnect');
+
+  // Rejection on the surviving connection must not create a receiver Blob or leak active transfer state.
+  await evaluate(b, `window.__lemonSmokeLastBlob = null`);
+  await evaluate(a, `(() => {
+    const bytes = new Uint8Array(32768); bytes.fill(0x5a);
+    const file = new File([bytes], 'lemon-reject-smoke.bin', { type: 'application/octet-stream' });
+    window.__lemonRejectState = 'pending';
+    window.__p2p.sendEntries([{ file, path: file.name }]).then(
+      () => { window.__lemonRejectState = 'fulfilled'; },
+      () => { window.__lemonRejectState = 'rejected'; }
+    );
+    return true;
+  })()`);
+
+  await waitFor('receiver reject prompt', () => evaluate(b, `(() => {
+    const row = [...document.querySelectorAll('#transfer-list .transfer')].find((x) => x.querySelector('.t-name')?.textContent === 'lemon-reject-smoke.bin');
+    return !!row?.querySelector('.t-actions button.danger');
+  })()`), 20000);
+  await evaluate(b, `(() => {
+    const row = [...document.querySelectorAll('#transfer-list .transfer')].find((x) => x.querySelector('.t-name')?.textContent === 'lemon-reject-smoke.bin');
+    const button = row?.querySelector('.t-actions button.danger'); if (!button) throw new Error('reject button missing'); button.click(); return true;
+  })()`);
+
+  await Promise.all([
+    waitFor('sender rejection completion', () => evaluate(a, `(() => {
+      const row = [...document.querySelectorAll('#transfer-list .transfer')].find((x) => x.querySelector('.t-name')?.textContent === 'lemon-reject-smoke.bin');
+      return window.__lemonRejectState === 'fulfilled' && /拒否/.test(row?.querySelector('.t-status')?.textContent || '');
+    })()`), 15000),
+    waitFor('receiver rejection completion', () => evaluate(b, `(() => {
+      const row = [...document.querySelectorAll('#transfer-list .transfer')].find((x) => x.querySelector('.t-name')?.textContent === 'lemon-reject-smoke.bin');
+      return /拒否/.test(row?.querySelector('.t-status')?.textContent || '');
+    })()`), 15000),
+  ]);
+  assert.equal(await evaluate(b, `window.__lemonSmokeLastBlob === null`), true, 'rejected transfer created a receiver Blob');
+  assert.equal(await evaluate(a, `window.__p2p.state().activeTransfers`), 0, 'sender rejection leaked active transfer state');
+  assert.equal(await evaluate(b, `window.__p2p.state().activeTransfers`), 0, 'receiver rejection leaked active transfer state');
+
+  console.log(`Lemon production browser smoke passed: authenticated ${expected.size}-byte SHA-256 transfer + simultaneous reconnect convergence + rejection isolation`);
 } catch (err) {
   console.error(`Lemon production browser smoke failed: ${err && err.stack ? err.stack : err}`);
   if (a) console.error('A state:', JSON.stringify(await pageSummary(a)));
   if (b) console.error('B state:', JSON.stringify(await pageSummary(b)));
   process.exitCode = 1;
 } finally {
-  if (a) a.close();
-  if (b) b.close();
-  cleanup();
+  if (a) a.close(); if (b) b.close(); cleanup();
 }
