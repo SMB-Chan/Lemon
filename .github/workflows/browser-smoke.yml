@@ -1,0 +1,52 @@
+name: Production browser smoke
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "production-browser-smoke"
+  cancel-in-progress: true
+
+jobs:
+  chrome:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Resolve production URL and Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          OWNER_LOWER="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          echo "LEMON_URL=https://${OWNER_LOWER}.github.io/${REPO_NAME}/" >> "$GITHUB_ENV"
+
+          CHROME=""
+          for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
+            if command -v "$candidate" >/dev/null 2>&1; then
+              CHROME="$(command -v "$candidate")"
+              break
+            fi
+          done
+          test -n "$CHROME"
+          echo "CHROME_BIN=$CHROME" >> "$GITHUB_ENV"
+          "$CHROME" --version
+          node -e "if (typeof WebSocket !== 'function') throw new Error('Node WebSocket unavailable')"
+      - name: Wait for this commit to reach public Pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          node tests/live-pages.mjs "$LEMON_URL" "$GITHUB_SHA" "$VERSION"
+      - name: Run authenticated two-browser transfer smoke
+        run: node tests/live-browser-smoke.mjs "$LEMON_URL"
