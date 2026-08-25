@@ -20,6 +20,7 @@
   let installed = false;
   let directTransfers = 0;
   let directWakeLock = null;
+  let directWakeLockRequest = null;
 
   function normalizeFeatures(input) {
     if (!Array.isArray(input) || input.length > 32) return [];
@@ -53,6 +54,15 @@
 
   function isFlowMessage(data) {
     return !!data && typeof data === 'object' && data.t === 'lemon-flow';
+  }
+
+  function validFlowMessage(data, activeOutgoingId) {
+    return isFlowMessage(data)
+      && data.c === CAP_VERSION
+      && typeof activeOutgoingId === 'string'
+      && activeOutgoingId.length > 0
+      && data.id === activeOutgoingId
+      && typeof data.paused === 'boolean';
   }
 
   function safeDownloadName(path) {
@@ -152,20 +162,45 @@
     root.dispatchEvent(new root.CustomEvent(name, { detail }));
   }
 
-  async function acquireDirectWakeLock() {
+  function ensureDirectWakeLock() {
+    if (directTransfers <= 0 || directWakeLock || directWakeLockRequest) return;
+    if (!root || !root.navigator || !root.navigator.wakeLock) return;
+    if (root.document && root.document.visibilityState === 'hidden') return;
+
+    directWakeLockRequest = root.navigator.wakeLock.request('screen').then((lock) => {
+      directWakeLockRequest = null;
+      if (directTransfers <= 0) {
+        try { lock.release().catch(() => {}); } catch (_) {}
+        return;
+      }
+      directWakeLock = lock;
+      lock.addEventListener('release', () => {
+        if (directWakeLock === lock) directWakeLock = null;
+        if (directTransfers > 0) ensureDirectWakeLock();
+      }, { once: true });
+    }).catch(() => {
+      directWakeLockRequest = null;
+    });
+  }
+
+  function acquireDirectWakeLock() {
     directTransfers++;
-    if (directWakeLock || !root || !root.navigator || !root.navigator.wakeLock) return;
-    try {
-      directWakeLock = await root.navigator.wakeLock.request('screen');
-      directWakeLock.addEventListener('release', () => { directWakeLock = null; }, { once: true });
-    } catch (_) {}
+    ensureDirectWakeLock();
   }
 
   function releaseDirectWakeLock() {
     directTransfers = Math.max(0, directTransfers - 1);
-    if (directTransfers !== 0 || !directWakeLock) return;
-    directWakeLock.release().catch(() => {});
+    if (directTransfers !== 0) return;
+    if (!directWakeLock) return;
+    const lock = directWakeLock;
     directWakeLock = null;
+    try { lock.release().catch(() => {}); } catch (_) {}
+  }
+
+  function releaseDirectState(direct) {
+    if (!direct || !direct.wakeHeld) return;
+    direct.wakeHeld = false;
+    releaseDirectWakeLock();
   }
 
   function uiForEntry(entry) {
@@ -227,6 +262,7 @@
     const state = {
       remoteFeatures: new Set(),
       remotePaused: false,
+      activeOutgoingId: null,
       openFired: false,
       direct: null,
     };
@@ -242,6 +278,22 @@
       }
     }
 
+    function sendApplication(data, chunked) {
+      const isStandaloneMeta = !!data && typeof data === 'object' && data.t === 'meta'
+        && typeof data.id === 'string' && !data.folderId && !data.bundleId;
+      const endsActive = !!data && typeof data === 'object' && data.t === 'end'
+        && data.id === state.activeOutgoingId;
+      const result = rawSend(data, chunked);
+      if (isStandaloneMeta) {
+        state.activeOutgoingId = data.id;
+        state.remotePaused = false;
+      } else if (endsActive) {
+        state.activeOutgoingId = null;
+        state.remotePaused = false;
+      }
+      return result;
+    }
+
     function failDirect(reason, closeConnection) {
       const direct = state.direct;
       if (!direct) return;
@@ -249,7 +301,7 @@
       direct.sink.abort().catch(() => {});
       setUiStatus(direct.ui, '直接保存に失敗: ' + String(reason || '不明なエラー'));
       markUi(direct.ui, 'failed');
-      releaseDirectWakeLock();
+      releaseDirectState(direct);
       emit('lemon-direct-save-error', { peer: String(raw.peer || ''), id: direct.meta.id, reason: String(reason || '') });
       if (closeConnection) {
         try { raw.close(); } catch (_) {}
@@ -301,7 +353,7 @@
           peer: String(raw.peer || ''), id: direct.meta.id, size: direct.meta.size,
         });
         state.direct = null;
-        releaseDirectWakeLock();
+        releaseDirectState(direct);
       } catch (err) {
         failDirect(err && err.message ? err.message : '直接保存を完了できません', true);
       }
@@ -312,6 +364,7 @@
       if (!state.remoteFeatures.has(FEATURE_FLOW)) return;
       button.disabled = true;
       let writable = null;
+      let direct = null;
       try {
         const handle = await root.showSaveFilePicker({ suggestedName: safeDownloadName(meta.name) });
         writable = await handle.createWritable();
@@ -324,7 +377,7 @@
           onResume: () => sendControl({ t: 'lemon-flow', c: CAP_VERSION, id: meta.id, paused: false }),
           onError: (err) => failDirect(err && err.message ? err.message : 'ディスク書き込みエラー', true),
         });
-        state.direct = {
+        direct = {
           meta,
           sink,
           ui,
@@ -333,17 +386,23 @@
           startedAt: Date.now(),
           receiveTail: Promise.resolve(),
           finishing: false,
+          wakeHeld: false,
         };
+        state.direct = direct;
         if (ui.actions) ui.actions.remove();
         setUiStatus(ui, '直接保存中…');
         acquireDirectWakeLock();
+        direct.wakeHeld = true;
         if (!sendControl({ t: 'accept', id: meta.id })) {
           throw new Error('受信承認を送信できません');
         }
         emit('lemon-direct-save-start', { peer: String(raw.peer || ''), id: meta.id, size: meta.size });
       } catch (err) {
-        if (state.direct && state.direct.meta.id === meta.id) state.direct = null;
-        if (writable) {
+        if (state.direct === direct) state.direct = null;
+        if (direct) {
+          try { await direct.sink.abort(); } catch (_) {}
+          releaseDirectState(direct);
+        } else if (writable) {
           try { await writable.abort(); } catch (_) {}
         }
         button.disabled = false;
@@ -403,7 +462,7 @@
         return;
       }
       if (isFlowMessage(data)) {
-        if (data.c !== CAP_VERSION || typeof data.id !== 'string' || typeof data.paused !== 'boolean') return;
+        if (!validFlowMessage(data, state.activeOutgoingId)) return;
         state.remotePaused = data.paused;
         return;
       }
@@ -428,6 +487,7 @@
 
     rawOn('close', () => {
       state.remotePaused = false;
+      state.activeOutgoingId = null;
       if (state.direct) failDirect('接続が切断されました', false);
     });
 
@@ -448,7 +508,7 @@
             return proxy;
           };
         }
-        if (prop === 'send') return function (data, chunked) { return rawSend(data, chunked); };
+        if (prop === 'send') return sendApplication;
         if (prop === 'dataChannel') return dataChannelView(target.dataChannel, state);
         if (prop === '__lemonRemoteFeatures') return [...state.remoteFeatures];
         if (prop === '__lemonCapabilityVersion') return CAP_VERSION;
@@ -511,6 +571,11 @@
     });
     Object.defineProperty(WrappedPeer, '__lemonCapabilitiesWrapped', { value: true });
     root.Peer = WrappedPeer;
+    if (root.document && typeof root.document.addEventListener === 'function') {
+      root.document.addEventListener('visibilitychange', () => {
+        if (root.document.visibilityState === 'visible' && directTransfers > 0) ensureDirectWakeLock();
+      });
+    }
     return true;
   }
 
@@ -532,6 +597,7 @@
     normalizeFeatures,
     supportsDirectSave,
     localFeatures,
+    validFlowMessage,
     createDirectSink,
     install,
   };
