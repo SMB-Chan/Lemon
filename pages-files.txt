@@ -1,0 +1,10 @@
+index.html
+styles.css
+auth.js
+core.js
+capabilities.js
+diagnostics.js
+pairing-ui.js
+auth-guard.js
+connection-policy.js
+app.js
