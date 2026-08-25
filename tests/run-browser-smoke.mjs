@@ -7,7 +7,7 @@ if (!script) {
 }
 
 const MAX_ATTEMPTS = 3;
-const RETRYABLE = /authenticated connection timed out/i;
+const RETRYABLE = /authenticated connection(?: \+ protocol hello)? timed out/i;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function runOnce(attempt) {
@@ -31,13 +31,13 @@ function runOnce(attempt) {
 }
 
 for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-  if (attempt > 1) console.error(`Retrying browser smoke after authenticated connection timeout (${attempt}/${MAX_ATTEMPTS})`);
+  if (attempt > 1) console.error(`Retrying browser smoke after authenticated connection bootstrap timeout (${attempt}/${MAX_ATTEMPTS})`);
   const result = await runOnce(attempt);
   if (result.code === 0) process.exit(0);
 
   const retryable = RETRYABLE.test(result.combined);
   if (!retryable || attempt === MAX_ATTEMPTS) {
-    if (retryable) console.error(`Authenticated connection timeout persisted for ${MAX_ATTEMPTS} attempts`);
+    if (retryable) console.error(`Authenticated connection bootstrap timeout persisted for ${MAX_ATTEMPTS} attempts`);
     else console.error('Browser smoke failed outside the retryable connection-bootstrap boundary; not retrying');
     process.exit(result.code || 1);
   }
