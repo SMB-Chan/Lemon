@@ -59,12 +59,49 @@ const appPath = path.join(__dirname, '..', 'app.js');
 const appSource = fs.readFileSync(appPath, 'utf8');
 assert.doesNotThrow(() => new Function(appSource));
 
-// The HTML entrypoint must load dependencies in the expected order.
+// Entry point dependency order and supply-chain policy.
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-const peerAt = html.indexOf('peerjs.min.js');
-const qrAt = html.indexOf('qrcode.min.js');
+const peerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js';
+const qrUrl = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+const peerSri = 'sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==';
+const qrSri = 'sha512-ZDSPMa/JM1D+7kdg2x3BsruQ6T/JpJo3jWDWkCZsP+5yVyp1KfESqLI+7RqB5k24F7p2cV7i2YHh/890y6P6Sw==';
+const styleAt = html.indexOf('./styles.css');
+const peerAt = html.indexOf(peerUrl);
+const qrAt = html.indexOf(qrUrl);
 const coreAt = html.indexOf('core.js');
 const appAt = html.indexOf('app.js');
-assert.ok(peerAt >= 0 && qrAt > peerAt && coreAt > qrAt && appAt > coreAt, 'script loading order is invalid');
+assert.ok(styleAt >= 0 && peerAt > styleAt && qrAt > peerAt && coreAt > qrAt && appAt > coreAt, 'resource loading order is invalid');
+assert.ok(html.includes(`integrity="${peerSri}"`), 'PeerJS SRI is missing or changed');
+assert.ok(html.includes(`integrity="${qrSri}"`), 'QR SRI is missing or changed');
+assert.ok(!html.includes('unpkg.com'), 'unpkg must not be part of the runtime trust surface');
+assert.ok(!/<style(?:\s|>)/i.test(html), 'inline style blocks are forbidden by CSP');
+
+const cspMatch = html.match(/<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"/i);
+assert.ok(cspMatch, 'CSP meta policy is missing');
+const csp = cspMatch[1];
+for (const required of [
+  "default-src 'self'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "script-src 'self' https://cdnjs.cloudflare.com",
+  "style-src 'self'",
+  "connect-src 'self' https://0.peerjs.com wss://0.peerjs.com",
+]) {
+  assert.ok(csp.includes(required), `CSP directive missing: ${required}`);
+}
+assert.ok(!csp.includes("'unsafe-inline'"), 'CSP must not allow unsafe-inline');
+assert.ok(!csp.includes("'unsafe-eval'"), 'CSP must not allow unsafe-eval');
+
+// Every remote script must be pinned with SRI, anonymous CORS and no referrer.
+const remoteScripts = [...html.matchAll(/<script\b([^>]*\bsrc="https:\/\/[^\"]+"[^>]*)><\/script>/gi)];
+assert.equal(remoteScripts.length, 2, 'unexpected number of remote scripts');
+for (const [, attrs] of remoteScripts) {
+  assert.match(attrs, /\bintegrity="sha512-[^"]+"/i);
+  assert.match(attrs, /\bcrossorigin="anonymous"/i);
+  assert.match(attrs, /\breferrerpolicy="no-referrer"/i);
+}
+
+const css = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+assert.ok(css.includes(':root'), 'styles.css appears incomplete');
 
 console.log('Lemon smoke tests passed');
