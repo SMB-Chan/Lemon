@@ -196,6 +196,22 @@ try {
     waitFor('B Lemon initialization', () => evaluate(b, `document.readyState === 'complete' && !!window.__p2p && !!window.LemonAuth`)),
   ]);
 
+  // Capture the receiver Blob directly at creation time. Fetching its blob: URL is
+  // intentionally avoided because page CSP/browser policy can reject fetch(blob:)
+  // even though the download link itself is valid.
+  await evaluate(b, `(() => {
+    if (!window.__lemonSmokeOriginalCreateObjectURL) {
+      const original = URL.createObjectURL.bind(URL);
+      window.__lemonSmokeOriginalCreateObjectURL = original;
+      URL.createObjectURL = function (blob) {
+        window.__lemonSmokeLastBlob = blob;
+        return original(blob);
+      };
+    }
+    window.__lemonSmokeLastBlob = null;
+    return true;
+  })()`);
+
   const [inviteA, inviteB] = await Promise.all([
     waitFor('A authenticated invite', () => evaluate(a, `(() => { const v = document.querySelector('#my-id')?.textContent || ''; return v.includes('~') ? v : null; })()`)),
     waitFor('B authenticated invite', () => evaluate(b, `(() => { const v = document.querySelector('#my-id')?.textContent || ''; return v.includes('~') ? v : null; })()`)),
@@ -247,7 +263,7 @@ try {
 
   await Promise.all([
     waitFor('sender transfer completion', () => evaluate(a, `window.__lemonSmokeSendState === 'fulfilled'`), 45000),
-    waitFor('receiver transfer completion', () => evaluate(b, `(() => { const row = document.querySelector('#transfer-list .transfer.done'); return !!row && !!row.querySelector('a.save-btn'); })()`), 45000),
+    waitFor('receiver transfer completion', () => evaluate(b, `(() => { const row = document.querySelector('#transfer-list .transfer.done'); return !!row && !!row.querySelector('a.save-btn') && window.__lemonSmokeLastBlob instanceof Blob; })()`), 45000),
   ]);
 
   const sendError = await evaluate(a, `window.__lemonSmokeSendError`);
@@ -259,8 +275,9 @@ try {
     const link = [...document.querySelectorAll('#transfer-list .transfer.done a.save-btn')]
       .find((item) => item.download === 'lemon-browser-smoke.bin');
     if (!link) throw new Error('completed receiver blob link is missing');
-    const response = await fetch(link.href);
-    const buffer = await response.arrayBuffer();
+    const blob = window.__lemonSmokeLastBlob;
+    if (!(blob instanceof Blob)) throw new Error('captured receiver Blob is missing');
+    const buffer = await blob.arrayBuffer();
     const digest = await crypto.subtle.digest('SHA-256', buffer);
     const sha256 = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
     return { size: buffer.byteLength, sha256, status: link.closest('.transfer')?.querySelector('.t-status')?.textContent || '' };
