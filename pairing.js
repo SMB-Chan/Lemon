@@ -18,6 +18,14 @@
     }
   }
 
+  function notify(message) {
+    const toast = document.querySelector('#toast');
+    if (!toast) return;
+    toast.textContent = message;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 4000);
+  }
+
   function connectionBinding(raw) {
     const pc = raw && raw.peerConnection;
     const localSdp = pc && pc.localDescription && pc.localDescription.sdp;
@@ -65,6 +73,7 @@
       const err = new Error(message);
       err.name = 'LemonPairingError';
       emitTo(listeners, 'error', err);
+      notify(message);
       try { raw.close(); } catch (_) {}
     }
 
@@ -328,6 +337,13 @@
     rawPeer.on('open', (peerId) => {
       queueMicrotask(() => {
         try { renderShareCode(peerId, localSecret); } catch (err) { console.error(err); }
+        if (!initialPairToken) return;
+        const input = document.querySelector('#peer-input');
+        const button = document.querySelector('#connect-btn');
+        if (!input || !button) return;
+        input.value = initialPairToken;
+        initialPairToken = null;
+        button.click();
       });
     });
 
@@ -348,10 +364,18 @@
             const parsed = Pair.parseShareCode(rawTarget);
             const peerId = parsed.peerId;
             if (parsed.malformed || !Pair.validPeerId(peerId)) {
+              notify('秘密付きペアリングコードの形式が不正です');
               throw new Error('秘密付きペアリングコードの形式が不正です');
             }
-            if (peerId === target.id) throw new Error('自分自身には接続できません');
-            if (parsed.secret) remoteSecrets.set(peerId, parsed.secret);
+            if (peerId === target.id) {
+              notify('自分自身には接続できません');
+              throw new Error('自分自身には接続できません');
+            }
+            if (parsed.secret) {
+              remoteSecrets.set(peerId, parsed.secret);
+              const input = document.querySelector('#peer-input');
+              if (input && String(input.value || '').trim() === String(rawTarget || '').trim()) input.value = peerId;
+            }
             const remoteSecret = parsed.secret || remoteSecrets.get(peerId) || null;
             const rawConn = target.connect(peerId, options);
             return wrapConnection(rawConn, {
@@ -376,14 +400,4 @@
   Object.setPrototypeOf(LemonPeer, OriginalPeer);
   LemonPeer.prototype = OriginalPeer.prototype;
   window.Peer = LemonPeer;
-
-  document.addEventListener('DOMContentLoaded', () => {
-    if (!initialPairToken) return;
-    const input = document.querySelector('#peer-input');
-    const button = document.querySelector('#connect-btn');
-    if (!input || !button) return;
-    input.value = initialPairToken;
-    button.click();
-    initialPairToken = null;
-  }, { once: true });
 })();
