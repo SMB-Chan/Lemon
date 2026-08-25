@@ -14,6 +14,10 @@ assert.match(expectedVersion, /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/, 'expecte
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const verifyToken = expectedSha.slice(0, 16);
+const configuredWaitAttempts = Number.parseInt(process.env.LEMON_BUILD_WAIT_ATTEMPTS || '20', 10);
+const buildWaitAttempts = Number.isSafeInteger(configuredWaitAttempts)
+  && configuredWaitAttempts >= 1 && configuredWaitAttempts <= 120
+  ? configuredWaitAttempts : 20;
 
 function withCacheBust(url) {
   const out = new URL(url);
@@ -45,7 +49,7 @@ async function fetchResponse(url, attempts = 8, delayMs = 1500) {
 async function waitForBuildInfo() {
   const url = withCacheBust(new URL('build-info.json', base));
   let last = 'not fetched';
-  for (let attempt = 1; attempt <= 20; attempt++) {
+  for (let attempt = 1; attempt <= buildWaitAttempts; attempt++) {
     try {
       const res = await fetchResponse(url, 1);
       const info = JSON.parse(await res.text());
@@ -59,9 +63,9 @@ async function waitForBuildInfo() {
     } catch (err) {
       last = err && err.message ? err.message : String(err);
     }
-    if (attempt < 20) await sleep(1500);
+    if (attempt < buildWaitAttempts) await sleep(1500);
   }
-  throw new Error(`deployed build-info did not converge: ${last}`);
+  throw new Error(`deployed build-info did not converge after ${buildWaitAttempts} attempts: ${last}`);
 }
 
 function sha256(buffer) {
