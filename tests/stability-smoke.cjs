@@ -9,53 +9,35 @@ const Caps = require('../capabilities.js');
 const rootDir = path.join(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(rootDir, p), 'utf8');
 
-// Simultaneous cross-connects must deterministically converge on one direction.
 assert.equal(CP.preferredDirection('drop-a', 'drop-b'), 'outgoing');
 assert.equal(CP.preferredDirection('drop-b', 'drop-a'), 'incoming');
 assert.throws(() => CP.preferredDirection('drop-a', 'drop-a'), /同一Peer/);
-assert.equal(CP.shouldReplaceExisting('drop-a', 'drop-b', false, true, false), true,
-  'smaller peer should replace pending incoming with outgoing');
-assert.equal(CP.shouldReplaceExisting('drop-b', 'drop-a', true, false, false), true,
-  'larger peer should replace pending outgoing with incoming');
-assert.equal(CP.shouldReplaceExisting('drop-a', 'drop-b', true, false, false), false,
-  'non-preferred new direction must not replace');
-assert.equal(CP.shouldReplaceExisting('drop-a', 'drop-b', false, true, true), false,
-  'an established connection must not be replaced');
-assert.equal(CP.shouldReplaceExisting('drop-a', 'drop-b', true, true, false), false,
-  'same-direction duplicates must not replace');
+assert.equal(CP.shouldReplaceExisting('drop-a', 'drop-b', false, true, false), true);
+assert.equal(CP.shouldReplaceExisting('drop-b', 'drop-a', true, false, false), true);
+assert.equal(CP.shouldReplaceExisting('drop-a', 'drop-b', true, false, false), false);
+assert.equal(CP.shouldReplaceExisting('drop-a', 'drop-b', false, true, true), false);
+assert.equal(CP.shouldReplaceExisting('drop-a', 'drop-b', true, true, false), false);
 
-// Flow-control frames are scoped to the exact currently active standalone transfer.
 assert.equal(Caps.validFlowMessage({ t: 'lemon-flow', c: Caps.CAP_VERSION, id: 'm1', paused: true }, 'm1'), true);
 assert.equal(Caps.validFlowMessage({ t: 'lemon-flow', c: Caps.CAP_VERSION, id: 'other', paused: true }, 'm1'), false);
 assert.equal(Caps.validFlowMessage({ t: 'lemon-flow', c: Caps.CAP_VERSION + 1, id: 'm1', paused: true }, 'm1'), false);
 assert.equal(Caps.validFlowMessage({ t: 'lemon-flow', c: Caps.CAP_VERSION, id: 'm1', paused: 'yes' }, 'm1'), false);
 assert.equal(Caps.validFlowMessage({ t: 'lemon-flow', c: Caps.CAP_VERSION, id: 'm1', paused: false }, null), false);
 
-// Browser modules introduced by the stabilization layer must parse.
 for (const file of ['connection-policy.js', 'capabilities.js', 'app.js']) {
   assert.doesNotThrow(() => new Function(read(file)), `${file} has a syntax error`);
 }
 
 const app = read('app.js');
-for (const token of [
-  'CP.shouldReplaceExisting',
-  '_lemonOutgoing',
-  'connections.get(remoteId) === conn',
-]) {
+for (const token of ['CP.shouldReplaceExisting', '_lemonOutgoing', 'connections.get(remoteId) === conn']) {
   assert.ok(app.includes(token), `simultaneous-connection hardening missing: ${token}`);
 }
 
 const caps = read('capabilities.js');
-for (const token of [
-  'directWakeLockRequest',
-  'releaseDirectState',
-  'activeOutgoingId',
-  'validFlowMessage(data, state.activeOutgoingId)',
-]) {
+for (const token of ['directWakeLockRequest', 'releaseDirectState', 'activeOutgoingId', 'validFlowMessage(data, state.activeOutgoingId)']) {
   assert.ok(caps.includes(token), `capability hardening missing: ${token}`);
 }
 
-// Every third-party GitHub Action must be pinned to an immutable 40-hex commit.
 for (const workflow of [
   '.github/workflows/test.yml',
   '.github/workflows/jekyll-gh-pages.yml',
@@ -81,6 +63,7 @@ assert.ok(pagesWorkflow.includes("'_site/build-info.json'"), 'Pages build must g
 assert.ok(pagesWorkflow.includes('Verify live deployed site'), 'Pages deploy must verify the public site after deployment');
 assert.ok(pagesWorkflow.includes('steps.deployment.outputs.page_url'), 'live verification must use the actual deployment URL');
 assert.ok(pagesWorkflow.includes('tests/live-pages.mjs'), 'Pages deploy must run the live integrity smoke');
+assert.ok(!pagesWorkflow.includes('LEMON_BUILD_WAIT_ATTEMPTS'), 'Pages deploy verification must keep the stricter default convergence window');
 
 const browserWorkflow = read('.github/workflows/browser-smoke.yml');
 for (const token of [
@@ -93,12 +76,13 @@ for (const token of [
   'tests/live-direct-save-smoke.mjs',
   'Run wrong-secret and ZIP smoke',
   'Run direct-save flow-control smoke',
+  'LEMON_BUILD_WAIT_ATTEMPTS',
+  "'60'",
 ]) {
   assert.ok(browserWorkflow.includes(token), `production browser smoke invariant missing: ${token}`);
 }
 assert.doesNotMatch(browserWorkflow, /npm\s+(?:install|i|ci)\b/i, 'production browser smoke must remain zero-dependency');
 
-// The Pages artifact is an explicit, unique set of runtime files only.
 const manifest = read('pages-files.txt').split(/\r?\n/)
   .map((line) => line.trim())
   .filter((line) => line && !line.startsWith('#'));
@@ -131,6 +115,10 @@ for (const token of [
   "createHash('sha512')",
   'deployed bytes do not match build artifact',
   'remote runtime dependency bytes fail SRI',
+  'LEMON_BUILD_WAIT_ATTEMPTS',
+  'configuredWaitAttempts',
+  'configuredWaitAttempts <= 120',
+  'buildWaitAttempts',
 ]) {
   assert.ok(liveSmoke.includes(token), `live Pages verification invariant missing: ${token}`);
 }
@@ -190,7 +178,7 @@ for (const token of [
 assert.doesNotMatch(directSmoke, /console\.log\([^\n]*invite/i, 'direct-save smoke must not log authenticated invites');
 
 const pkg = JSON.parse(read('package.json'));
-assert.equal(pkg.version, '1.3.6', 'production direct-save smoke release version must be 1.3.6');
+assert.equal(pkg.version, '1.3.7', 'Pages/browser synchronization release version must be 1.3.7');
 assert.match(pkg.scripts.test, /node --check tests\/live-pages\.mjs/, 'normal CI must syntax-check the live Pages smoke script');
 assert.match(pkg.scripts.test, /node --check tests\/live-browser-smoke\.mjs/, 'normal CI must syntax-check the live browser smoke script');
 assert.match(pkg.scripts.test, /node --check tests\/live-auth-zip-smoke\.mjs/, 'normal CI must syntax-check the live auth/ZIP smoke script');
