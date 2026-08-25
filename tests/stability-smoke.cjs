@@ -139,13 +139,19 @@ for (const token of [
   'pairing UI did not normalize the authenticated invite',
   'received Blob SHA-256 differs from sender payload',
   "document.querySelector('#peer-input')",
+  'simultaneous reconnect convergence',
+  'diagnostics still tracks a duplicate open DataConnection',
+  'lemon-reject-smoke.bin',
+  'rejected transfer created a receiver Blob',
+  'sender rejection leaked active transfer state',
+  'receiver rejection leaked active transfer state',
 ]) {
   assert.ok(browserSmoke.includes(token), `live browser verification invariant missing: ${token}`);
 }
 assert.doesNotMatch(browserSmoke, /console\.log\([^\n]*invite/i, 'browser smoke must not log authenticated invites');
 
 const pkg = JSON.parse(read('package.json'));
-assert.equal(pkg.version, '1.3.3', 'stabilization release version must be 1.3.3');
+assert.equal(pkg.version, '1.3.4', 'browser boundary release version must be 1.3.4');
 assert.match(pkg.scripts.test, /node --check tests\/live-pages\.mjs/, 'normal CI must syntax-check the live Pages smoke script');
 assert.match(pkg.scripts.test, /node --check tests\/live-browser-smoke\.mjs/, 'normal CI must syntax-check the live browser smoke script');
 
