@@ -54,10 +54,11 @@ const fake = (size) => ({ file: { size } });
 assert.deepEqual(C.partitionEntries([fake(6), fake(6), fake(2)], 10).map((p) => p.length), [1, 2]);
 assert.deepEqual(C.partitionEntries([fake(20), fake(1)], 10).map((p) => p.length), [1, 1]);
 
-// Browser application must at least parse as JavaScript without executing DOM code.
-const appPath = path.join(__dirname, '..', 'app.js');
-const appSource = fs.readFileSync(appPath, 'utf8');
-assert.doesNotThrow(() => new Function(appSource));
+// Browser modules must at least parse as JavaScript without executing DOM code.
+for (const file of ['diagnostics.js', 'app.js']) {
+  const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+  assert.doesNotThrow(() => new Function(source), `${file} has a syntax error`);
+}
 
 // Entry point dependency order and supply-chain policy.
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
@@ -69,8 +70,14 @@ const styleAt = html.indexOf('./styles.css');
 const peerAt = html.indexOf(peerUrl);
 const qrAt = html.indexOf(qrUrl);
 const coreAt = html.indexOf('core.js');
+const diagAt = html.indexOf('diagnostics.js');
 const appAt = html.indexOf('app.js');
-assert.ok(styleAt >= 0 && peerAt > styleAt && qrAt > peerAt && coreAt > qrAt && appAt > coreAt, 'resource loading order is invalid');
+assert.ok(
+  styleAt >= 0 && peerAt > styleAt && qrAt > peerAt && coreAt > qrAt && diagAt > coreAt && appAt > diagAt,
+  'resource loading order is invalid'
+);
+assert.ok(html.includes('id="diag-refresh"'), 'diagnostics refresh control is missing');
+assert.ok(html.includes('id="diag-output"'), 'diagnostics output container is missing');
 assert.ok(html.includes(`integrity="${peerSri}"`), 'PeerJS SRI is missing or changed');
 assert.ok(html.includes(`integrity="${qrSri}"`), 'QR SRI is missing or changed');
 assert.ok(!html.includes('unpkg.com'), 'unpkg must not be part of the runtime trust surface');
@@ -101,7 +108,13 @@ for (const [, attrs] of remoteScripts) {
   assert.match(attrs, /\breferrerpolicy="no-referrer"/i);
 }
 
+const diagnostics = fs.readFileSync(path.join(__dirname, '..', 'diagnostics.js'), 'utf8');
+for (const token of ['getStats', 'selectedCandidatePairId', 'candidate-pair', 'availableOutgoingBitrate', 'maxMessageSize', 'bufferedAmount']) {
+  assert.ok(diagnostics.includes(token), `diagnostics coverage missing: ${token}`);
+}
+
 const css = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
 assert.ok(css.includes(':root'), 'styles.css appears incomplete');
+assert.ok(css.includes('.diag-peer'), 'diagnostics styles are missing');
 
 console.log('Lemon smoke tests passed');

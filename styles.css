@@ -87,6 +87,7 @@ button:hover { filter: brightness(1.1); }
 button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button:disabled { opacity: .5; cursor: not-allowed; }
 button.sub { background: #232836; color: var(--text); }
+button.compact { padding: 5px 10px; font-size: 12px; }
 button.ok { background: var(--ok); color: #04281b; }
 button.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); padding: 6px 10px; }
 .connect-row { display: flex; gap: 8px; }
@@ -134,6 +135,17 @@ ul { list-style: none; margin: 0; padding: 0; }
 #send-target { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
 #send-target b { color: var(--text); font-family: ui-monospace, Menlo, Consolas, monospace; }
 .security-note { margin: 10px 0 0; font-size: 11px; color: var(--muted); }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.section-head h2 { margin: 0; }
+.diag-output { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.diag-empty { margin: 0; color: var(--muted); font-size: 12px; }
+.diag-peer { background: #0f1219; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 12px; }
+.diag-peer > strong { display: block; margin-bottom: 7px; font-family: ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+.diag-row { display: grid; grid-template-columns: minmax(118px, .8fr) minmax(0, 1.2fr); gap: 10px; padding: 3px 0; }
+.diag-label { color: var(--muted); }
+.diag-value { text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.diag-ok { color: var(--ok); font-weight: 600; }
+.diag-warn { color: var(--warn); font-weight: 600; }
 #transfer-list { display: flex; flex-direction: column; gap: 10px; }
 .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 6px 0; }
 .transfer { background: #0f1219; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
@@ -199,4 +211,6 @@ a.save-btn.small {
   .connect-row { flex-direction: column; }
   .conn-row { flex-wrap: wrap; }
   .conn-row .name { flex-basis: 100%; }
+  .diag-row { grid-template-columns: 1fr; gap: 1px; }
+  .diag-value { text-align: left; }
 }
