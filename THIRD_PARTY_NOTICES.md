@@ -2,6 +2,8 @@
 
 Lemon currently executes two third-party browser libraries. Both are loaded from cdnjs with exact versions and SHA-512 Subresource Integrity (SRI) checks.
 
+The canonical machine-readable dependency policy is `third-party-lock.json`. Human-readable notices and `index.html` must stay consistent with that lock; `npm test` enforces this relationship.
+
 ## PeerJS 1.5.5
 
 - Project: PeerJS
@@ -25,6 +27,6 @@ qrcode-generator is used only to render the pairing QR code.
 
 ## Update policy
 
-Do not update a URL or version without also updating and reviewing its SRI digest. `npm test` checks the exact runtime URLs and digests and fails when an unexpected remote script is introduced.
+Do not update a URL, version, origin, or SRI digest in isolation. Update `third-party-lock.json` first, then update `index.html` and this notice in the same review. `npm test` fails if runtime scripts diverge from the lock, if an unexpected remote script is introduced, or if the lock weakens the exact-version / SHA-512 requirements.
 
-The longer-term goal remains vendoring these browser dependencies so that the executable distribution can be fully self-contained. SRI+CSP is the current intermediate hardening step.
+The longer-term goal remains vendoring these browser dependencies so that the executable distribution can be fully self-contained. SRI+CSP plus a machine-readable lock is the current intermediate hardening step.
