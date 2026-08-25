@@ -77,13 +77,13 @@ const peerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.
 const qrUrl = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
 const peerSri = 'sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==';
 const qrSri = 'sha512-ZDSPMa/JM1D+7kdg2x3BsruQ6T/JpJo3jWDWkCZsP+5yVyp1KfESqLI+7RqB5k24F7p2cV7i2YHh/890y6P6Sw==';
-const styleAt = html.indexOf('./styles.css');
+const styleAt = html.indexOf('href="./styles.css"');
 const peerAt = html.indexOf(peerUrl);
 const qrAt = html.indexOf(qrUrl);
-const pairingCoreAt = html.indexOf('pairing-core.js');
-const pairingAt = html.indexOf('pairing.js');
-const coreAt = html.indexOf('core.js');
-const appAt = html.indexOf('app.js');
+const pairingCoreAt = html.indexOf('src="./pairing-core.js"');
+const pairingAt = html.indexOf('src="./pairing.js"');
+const coreAt = html.indexOf('src="./core.js"');
+const appAt = html.indexOf('src="./app.js"');
 assert.ok(
   styleAt >= 0 && peerAt > styleAt && qrAt > peerAt && pairingCoreAt > qrAt
   && pairingAt > pairingCoreAt && coreAt > pairingAt && appAt > coreAt,
