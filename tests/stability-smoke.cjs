@@ -90,7 +90,9 @@ for (const token of [
   'tests/live-pages.mjs',
   'tests/live-browser-smoke.mjs',
   'tests/live-auth-zip-smoke.mjs',
+  'tests/live-direct-save-smoke.mjs',
   'Run wrong-secret and ZIP smoke',
+  'Run direct-save flow-control smoke',
 ]) {
   assert.ok(browserWorkflow.includes(token), `production browser smoke invariant missing: ${token}`);
 }
@@ -169,10 +171,29 @@ for (const token of [
 }
 assert.doesNotMatch(authZipSmoke, /console\.log\([^\n]*invite/i, 'auth/ZIP smoke must not log authenticated invites');
 
+const directSmoke = read('tests/live-direct-save-smoke.mjs');
+for (const token of [
+  '24 * 1024 * 1024',
+  '16 * 1024 * 1024',
+  'firstWriteGate',
+  'direct-save button',
+  'sender flow-control pause',
+  'sender flow-control resume',
+  'sender completed before the direct-save flow pause could protect the receiver',
+  'direct-save SHA-256 differs from sender payload',
+  'successful direct-save unexpectedly aborted',
+  'direct-save incorrectly created a Blob download URL',
+  '直接保存済み.*整合性確認済み',
+]) {
+  assert.ok(directSmoke.includes(token), `live direct-save verification invariant missing: ${token}`);
+}
+assert.doesNotMatch(directSmoke, /console\.log\([^\n]*invite/i, 'direct-save smoke must not log authenticated invites');
+
 const pkg = JSON.parse(read('package.json'));
-assert.equal(pkg.version, '1.3.5', 'production auth/ZIP smoke release version must be 1.3.5');
+assert.equal(pkg.version, '1.3.6', 'production direct-save smoke release version must be 1.3.6');
 assert.match(pkg.scripts.test, /node --check tests\/live-pages\.mjs/, 'normal CI must syntax-check the live Pages smoke script');
 assert.match(pkg.scripts.test, /node --check tests\/live-browser-smoke\.mjs/, 'normal CI must syntax-check the live browser smoke script');
 assert.match(pkg.scripts.test, /node --check tests\/live-auth-zip-smoke\.mjs/, 'normal CI must syntax-check the live auth/ZIP smoke script');
+assert.match(pkg.scripts.test, /node --check tests\/live-direct-save-smoke\.mjs/, 'normal CI must syntax-check the live direct-save smoke script');
 
 console.log('Lemon stability/security tests passed');

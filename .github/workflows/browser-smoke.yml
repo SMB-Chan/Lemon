@@ -15,7 +15,7 @@ concurrency:
 jobs:
   chrome:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -52,3 +52,5 @@ jobs:
         run: node tests/live-browser-smoke.mjs "$LEMON_URL"
       - name: Run wrong-secret and ZIP smoke
         run: node tests/live-auth-zip-smoke.mjs "$LEMON_URL"
+      - name: Run direct-save flow-control smoke
+        run: node tests/live-direct-save-smoke.mjs "$LEMON_URL"
