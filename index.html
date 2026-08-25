@@ -10,8 +10,10 @@
 <link rel="stylesheet" href="./styles.css">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha512-ZDSPMa/JM1D+7kdg2x3BsruQ6T/JpJo3jWDWkCZsP+5yVyp1KfESqLI+7RqB5k24F7p2cV7i2YHh/890y6P6Sw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script defer src="./auth.js"></script>
 <script defer src="./core.js"></script>
 <script defer src="./diagnostics.js"></script>
+<script defer src="./pairing-ui.js"></script>
 <script defer src="./app.js"></script>
 </head>
 <body>
@@ -21,12 +23,12 @@
 </header>
 <main>
   <section class="card">
-    <h2>自分のコード</h2>
+    <h2>自分の接続コード</h2>
     <div class="id-row">
       <span id="my-id" class="id">----------</span>
       <button id="copy-btn" class="sub" type="button">コピー</button>
     </div>
-    <p class="hint">このコードを相手に伝えて接続します。コードは推測されにくい長さですが、独立した相手認証は次段階で導入予定です。</p>
+    <p class="hint">この接続コードには128-bitの認証秘密を含みます。接続したい相手だけに共有してください。ページを再読み込みすると新しいコードに変わります。</p>
     <div class="qr-box">
       <canvas id="my-qr" hidden aria-label="接続用QRコード"></canvas>
       <p id="qr-hint" class="qr-hint"></p>
@@ -36,7 +38,7 @@
   <section class="card">
     <h2>相手と接続</h2>
     <div class="connect-row">
-      <input type="text" id="peer-input" placeholder="相手のコードを入力" autocomplete="off" spellcheck="false" aria-label="相手のコード">
+      <input type="text" id="peer-input" placeholder="相手の接続コードを入力" autocomplete="off" spellcheck="false" aria-label="相手の接続コード">
       <button id="connect-btn" type="button">接続</button>
     </div>
     <ul id="conn-list"></ul>
@@ -53,7 +55,7 @@
     <input type="file" id="file-input" multiple hidden>
     <input type="file" id="folder-input" webkitdirectory multiple hidden>
     <p id="send-target">送信先: まだ接続なし</p>
-    <p class="security-note">同じ相手への送信は自動的に順番待ちになります。受信完了時にはサイズとCRC32を検証します。</p>
+    <p class="security-note">認証済みのDataChannelだけを転送層へ渡します。同じ相手への送信は順番待ちになり、受信完了時にはサイズとCRC32も検証します。</p>
   </section>
 
   <section class="card">
